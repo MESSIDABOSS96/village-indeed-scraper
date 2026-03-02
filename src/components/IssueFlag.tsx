@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { IssueSeverity } from "@/lib/types";
 
 const SEVERITY_STYLES: Record<IssueSeverity, { bg: string; text: string; border: string }> = {
@@ -21,20 +20,16 @@ interface IssueFlagProps {
 }
 
 export default function IssueFlag({ severity, message }: IssueFlagProps) {
-  const [expanded, setExpanded] = useState(false);
   const styles = SEVERITY_STYLES[severity];
 
   return (
-    <button
-      onClick={() => setExpanded(!expanded)}
-      className={`w-full text-left flex items-start gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium ${styles.bg} ${styles.text} ${styles.border} border cursor-pointer`}
+    <div
+      className={`w-full text-left flex items-start gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium ${styles.bg} ${styles.text} ${styles.border} border`}
     >
       <svg className="w-3 h-3 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
         <path fillRule="evenodd" d={SEVERITY_ICONS[severity]} clipRule="evenodd" />
       </svg>
-      <span className={expanded ? "" : "truncate"}>
-        {message}
-      </span>
-    </button>
+      <span>{message}</span>
+    </div>
   );
 }

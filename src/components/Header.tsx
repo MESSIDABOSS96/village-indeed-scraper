@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 
 const TITLE = "Jackson's Indeed Scraper";
 
-export default function Header() {
+export default function Header({ onReset }: { onReset?: () => void }) {
   const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
@@ -19,7 +19,8 @@ export default function Header() {
   return (
     <header className="pt-10 pb-6 px-6">
       <h1
-        className="text-5xl font-bold text-white text-center tracking-tight"
+        className={`text-5xl font-bold text-white text-center tracking-tight ${onReset ? "cursor-pointer hover:text-gray-200 transition-colors" : ""}`}
+        onClick={onReset}
       >
         {TITLE.split("").map((char, i) => (
           <span

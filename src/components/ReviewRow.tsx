@@ -36,7 +36,7 @@ export default function ReviewRow({
 
   return (
     <tr className="border-b border-gray-800 hover:bg-gray-800/50">
-      <td className="px-2 py-2 sticky left-0 bg-gray-900 z-10 border-r border-gray-700 min-w-[180px]">
+      <td className="px-2 py-2 align-top sticky left-0 bg-gray-900 z-10 border-r border-gray-700 min-w-[180px]">
         <div className="text-xs font-medium text-gray-100 truncate">
           {file.fileName}
         </div>

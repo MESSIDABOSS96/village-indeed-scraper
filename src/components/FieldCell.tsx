@@ -109,7 +109,7 @@ export default function FieldCell({
     : "";
 
   return (
-    <td className={`px-2 py-1.5 ${cellBg} min-w-[140px] max-w-[200px]`}>
+    <td className={`px-2 py-1.5 align-top ${cellBg} min-w-[140px] max-w-[200px]`}>
       <div className="space-y-1">
         {readOnly || column.type === "constant" ? (
           <span className="text-xs text-gray-400">{value}</span>
@@ -139,6 +139,9 @@ export default function FieldCell({
             onChange={(e) => onChange(e.target.value)}
             className="w-full text-xs px-2 py-1 border border-gray-700 rounded bg-gray-800 text-gray-300 hover:border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
           />
+        )}
+        {!value && issues.length === 0 && column.type !== "constant" && (
+          <IssueFlag severity="warning" message="Couldn't find, needs manual input" />
         )}
         {issues.map((issue, i) => (
           <IssueFlag key={i} severity={issue.severity} message={issue.message} />

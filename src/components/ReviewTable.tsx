@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { ProcessingFile, FieldKey } from "@/lib/types";
 import { COLUMNS } from "@/lib/constants";
 import ReviewRow from "./ReviewRow";
@@ -16,14 +15,6 @@ export default function ReviewTable({
   onFieldChange,
   saving,
 }: ReviewTableProps) {
-  const [filterNeedsReview, setFilterNeedsReview] = useState(false);
-
-  const displayFiles = filterNeedsReview
-    ? files.filter(
-        (f) => f.issues && f.issues.length > 0
-      )
-    : files;
-
   const totalIssues = files.reduce(
     (sum, f) => sum + (f.issues?.length ?? 0),
     0
@@ -31,7 +22,7 @@ export default function ReviewTable({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3 px-1">
+      <div className="mb-3 px-1">
         <div className="text-sm text-gray-400">
           {files.filter((f) => f.record).length} record
           {files.filter((f) => f.record).length !== 1 ? "s" : ""} extracted
@@ -41,18 +32,6 @@ export default function ReviewTable({
             </span>
           )}
         </div>
-        {totalIssues > 0 && (
-          <button
-            onClick={() => setFilterNeedsReview(!filterNeedsReview)}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-              filterNeedsReview
-                ? "bg-yellow-900/40 border-yellow-700 text-yellow-400"
-                : "border-gray-600 text-gray-400 hover:bg-gray-800"
-            }`}
-          >
-            {filterNeedsReview ? "Show All" : "Needs Review"}
-          </button>
-        )}
       </div>
 
       <div className="review-table-container overflow-x-auto border border-gray-700 rounded-xl shadow-lg shadow-black/20 bg-gray-900">
@@ -73,7 +52,7 @@ export default function ReviewTable({
             </tr>
           </thead>
           <tbody>
-            {displayFiles.map((file) => (
+            {files.map((file) => (
               <ReviewRow
                 key={file.id}
                 file={file}

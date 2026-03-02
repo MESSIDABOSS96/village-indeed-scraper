@@ -8,7 +8,8 @@ function getAuth() {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set");
   }
 
-  const credentials = JSON.parse(serviceAccountJson);
+  const sanitized = serviceAccountJson.replace(/\n/g, "\\n");
+  const credentials = JSON.parse(sanitized);
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
