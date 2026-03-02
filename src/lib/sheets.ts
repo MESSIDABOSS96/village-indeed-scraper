@@ -8,8 +8,20 @@ function getAuth() {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set");
   }
 
-  const sanitized = serviceAccountJson.replace(/\n/g, "\\n");
-  const credentials = JSON.parse(sanitized);
+  let credentials;
+  try {
+    credentials = JSON.parse(serviceAccountJson);
+  } catch {
+    // Vercel may expand \n to actual newlines, breaking JSON parsing
+    const sanitized = serviceAccountJson.replace(/\n/g, "\\n");
+    credentials = JSON.parse(sanitized);
+  }
+
+  // Ensure the private key has real newline characters
+  if (credentials.private_key) {
+    credentials.private_key = credentials.private_key.replace(/\\n/g, "\n");
+  }
+
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
