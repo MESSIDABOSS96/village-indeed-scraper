@@ -1,0 +1,19 @@
+{
+  "constants": {
+    "contactOwner": "Jackson Massey",
+    "leadStatus": "1) New",
+    "leadScore": "",
+    "lifecycleStage": "Lead",
+    "signUpSource": "Job Posting",
+    "signUpSource2": "Indeed"
+  },
+  "fallbacks": {
+    "villageRole": "Clinician",
+    "segment": "Solo Aspiring Practitioner",
+    "languagesSpoken": "English"
+  },
+  "critical": {
+    "errors": ["email", "firstName", "lastName"],
+    "warnings": ["phoneNumber"]
+  }
+}

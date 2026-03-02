@@ -1,0 +1,27 @@
+{
+  "columns": [
+    { "key": "firstName", "label": "First Name", "type": "text", "order": 1 },
+    { "key": "lastName", "label": "Last Name", "type": "text", "order": 2 },
+    { "key": "villageRole", "label": "Village Role", "type": "dropdown", "order": 3 },
+    { "key": "contactOwner", "label": "Contact Owner", "type": "constant", "order": 4 },
+    { "key": "linkedinUrl", "label": "LinkedIn URL", "type": "text", "order": 5 },
+    { "key": "email", "label": "Email", "type": "text", "order": 6 },
+    { "key": "phoneNumber", "label": "Phone Number", "type": "text", "order": 7 },
+    { "key": "leadStatus", "label": "Lead Status", "type": "constant", "order": 8 },
+    { "key": "leadScore", "label": "Lead Score", "type": "constant", "order": 9 },
+    { "key": "lifecycleStage", "label": "Lifecycle Stage", "type": "constant", "order": 10 },
+    { "key": "signUpSource", "label": "Sign Up Source", "type": "constant", "order": 11 },
+    { "key": "signUpSource2", "label": "Sign Up Source 2", "type": "constant", "order": 12 },
+    { "key": "city", "label": "City", "type": "text", "order": 13 },
+    { "key": "stateRegion", "label": "State/Region", "type": "text", "order": 14 },
+    { "key": "postalCode", "label": "Postal Code", "type": "text", "order": 15 },
+    { "key": "segment", "label": "Segment", "type": "dropdown", "order": 16 },
+    { "key": "specialties", "label": "Specialties", "type": "multi-checkbox", "order": 17 },
+    { "key": "agesServed", "label": "Ages Served", "type": "dropdown", "order": 18 },
+    { "key": "careSetting", "label": "Care Setting", "type": "dropdown", "order": 19 },
+    { "key": "languagesSpoken", "label": "Languages Spoken", "type": "dropdown", "order": 20 },
+    { "key": "licenseType", "label": "License Type", "type": "dropdown", "order": 21 },
+    { "key": "licenseNumber", "label": "License #", "type": "text", "order": 22 },
+    { "key": "licenseState", "label": "License State", "type": "text", "order": 23 }
+  ]
+}
