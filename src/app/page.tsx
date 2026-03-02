@@ -24,7 +24,7 @@ export default function Home() {
   if (phase === "upload") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 -mt-24">
-        <Header onReset={phase !== "upload" ? reset : undefined} />
+        <Header />
         <div className="w-full mt-6">
           <UploadZone onProcess={processFiles} />
         </div>
@@ -34,7 +34,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header onReset={phase !== "upload" ? reset : undefined} />
+      <Header onReset={reset} />
 
       <main className="flex-1 px-6 py-8">
         <div className="max-w-[1800px] mx-auto">
