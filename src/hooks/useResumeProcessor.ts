@@ -8,6 +8,7 @@ import type {
   ParseResult,
   ExtractResult,
 } from "@/lib/types";
+import { calculateLeadScore } from "@/lib/scoring";
 
 type Phase = "upload" | "processing" | "review";
 
@@ -39,6 +40,9 @@ export function useResumeProcessor() {
     let parseResults: ParseResult[];
     try {
       const parseRes = await fetch("/api/parse", { method: "POST", body: formData });
+      if (!parseRes.ok) {
+        throw new Error(`Parse API returned ${parseRes.status}`);
+      }
       const parseData = await parseRes.json();
       parseResults = parseData.results;
     } catch {
@@ -170,14 +174,32 @@ export function useResumeProcessor() {
     setPhase("review");
   }, []);
 
+  const SCORING_FIELDS: FieldKey[] = [
+    "sessionPreference",
+    "yearsOutOfSchool",
+    "licenseType",
+    "city",
+    "stateRegion",
+  ];
+
   const updateField = useCallback(
     (recordId: string, field: FieldKey, value: string) => {
       setFiles((prev) =>
         prev.map((f) => {
           if (f.record?.id !== recordId) return f;
+          const updated = { ...f.record, [field]: value };
+
+          // Recalculate lead score when scoring-relevant fields change
+          if (SCORING_FIELDS.includes(field)) {
+            const autoScore = calculateLeadScore(updated);
+            if (autoScore) {
+              updated.leadScore = autoScore;
+            }
+          }
+
           return {
             ...f,
-            record: { ...f.record, [field]: value },
+            record: updated,
             // Remove issues for this field when manually edited
             issues: f.issues?.filter((i) => i.field !== field),
           };

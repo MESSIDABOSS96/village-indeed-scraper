@@ -2,7 +2,6 @@
   "constants": {
     "contactOwner": "Jackson Massey",
     "leadStatus": "1) New",
-    "leadScore": "",
     "lifecycleStage": "Lead",
     "signUpSource": "Job Posting",
     "signUpSource2": "Indeed"

@@ -1,4 +1,18 @@
 {
+  "leadScore": [
+    "5 - Great Fit",
+    "4 - Good Fit",
+    "3 - Okay Fit",
+    "2 - Not a PMF Yet",
+    "1 - Wrong Industry",
+    "0 - Disqualified"
+  ],
+  "sessionPreference": [
+    "In-Home",
+    "Virtual",
+    "Both",
+    "No Preference"
+  ],
   "villageRole": [
     "Patient",
     "Parent",

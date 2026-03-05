@@ -23,6 +23,8 @@ export interface ResumeRecord {
   licenseType: string;
   licenseNumber: string;
   licenseState: string;
+  sessionPreference: string;
+  yearsOutOfSchool: string;
 }
 
 export type FieldKey = keyof Omit<ResumeRecord, "id">;
@@ -79,6 +81,7 @@ export interface Stage1Result {
   careSettings: string[];
   languages: string[];
   workExperience: string | null;
+  yearsOutOfSchool: string | null;
 }
 
 export interface Stage2Result {
@@ -107,6 +110,7 @@ export interface ColumnDef {
   label: string;
   type: "text" | "dropdown" | "multi-checkbox" | "constant";
   order: number;
+  export?: boolean;
 }
 
 export interface ParseResult {
@@ -130,4 +134,34 @@ export interface LinkedInLookup {
   lastName: string;
   city?: string;
   state?: string;
+}
+
+// Indeed Apply webhook types
+export interface IndeedWebhookPayload {
+  id: string;
+  applicant: { fullName: string; email: string; phoneNumber?: string };
+  resume: { data: string; contentType: string; fileName: string };
+  questionsAndAnswers?: { question: string; answer: string }[];
+  job: { title: string; id: string };
+  appliedDate: string;
+}
+
+export type InboxStatus = "new" | "processing" | "processed" | "error";
+export type Disposition = "New" | "Reviewed" | "Contacted" | "Rejected" | "Hired";
+
+export interface InboxItem {
+  id: string;
+  indeedApplicationId: string;
+  status: InboxStatus;
+  receivedAt: string;
+  applicantName: string;
+  resumeFileName: string;
+  jobTitle: string;
+  resumeText?: string;
+  processedRecord?: ResumeRecord;
+  issues?: FieldIssue[];
+  confidenceNotes?: ConfidenceMap;
+  errorMessage?: string;
+  disposition: Disposition;
+  interviewAvailability?: string;
 }

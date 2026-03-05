@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
         const stage2 = await runStage2(stage1);
 
         // Validation pipeline
-        const { record, issues, confidenceNotes } = validateAndNormalize(stage2);
+        const { record, issues, confidenceNotes } = validateAndNormalize(stage2, stage1);
 
         results.push({
           record,

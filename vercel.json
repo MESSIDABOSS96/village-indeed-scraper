@@ -2,6 +2,12 @@
   "functions": {
     "src/app/api/extract/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/indeed/webhook/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/indeed/process/route.ts": {
+      "maxDuration": 60
     }
   }
 }

@@ -11,6 +11,7 @@ IMPORTANT RULES:
 - For careSettings: return an array of settings where they've worked (e.g., "home health", "outpatient clinic", "school", "telehealth").
 - For languages: return an array of languages they speak. Only include languages explicitly mentioned.
 - For workExperience: provide a brief summary of their most recent 1-2 roles including employer name, title, and setting.
+- For yearsOutOfSchool: estimate how many years since the person completed their most recent degree or clinical training program. Use graduation dates, degree dates, or the start of their first professional role as clues. Return as a string number (e.g., "5"). Return null if you cannot determine this.
 
 Return ONLY valid JSON matching this exact shape (no markdown, no explanation):
 
@@ -30,7 +31,8 @@ Return ONLY valid JSON matching this exact shape (no markdown, no explanation):
   "agesServed": string | null,
   "careSettings": string[],
   "languages": string[],
-  "workExperience": string | null
+  "workExperience": string | null,
+  "yearsOutOfSchool": string | null
 }
 
 RESUME TEXT:

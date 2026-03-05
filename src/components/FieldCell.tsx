@@ -13,6 +13,8 @@ interface FieldCellProps {
   readOnly?: boolean;
 }
 
+const UI_ONLY_REQUIRED: Set<string> = new Set(["sessionPreference"]);
+
 function MultiSelect({
   options,
   selected,
@@ -100,7 +102,11 @@ export default function FieldCell({
   onChange,
   readOnly,
 }: FieldCellProps) {
-  const cellBg = issues.some((i) => i.severity === "error")
+  const needsAttention = !value && UI_ONLY_REQUIRED.has(column.key);
+
+  const cellBg = needsAttention
+    ? "bg-purple-900/40 ring-1 ring-purple-500/50"
+    : issues.some((i) => i.severity === "error")
     ? "bg-red-900/30"
     : issues.some((i) => i.severity === "warning")
     ? "bg-yellow-900/30"

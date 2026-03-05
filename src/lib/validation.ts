@@ -13,6 +13,7 @@ import type {
   ConfidenceMap,
   FieldKey,
   Stage2Result,
+  Stage1Result,
 } from "./types";
 
 function normalizeState(value: string): { normalized: string; issue?: FieldIssue } {
@@ -100,7 +101,8 @@ function validateSpecialties(value: string): { validated: string; issues: FieldI
 }
 
 export function validateAndNormalize(
-  stage2: Stage2Result
+  stage2: Stage2Result,
+  stage1?: Stage1Result
 ): { record: ResumeRecord; issues: FieldIssue[]; confidenceNotes: ConfidenceMap } {
   const issues: FieldIssue[] = [];
   const confidenceNotes: ConfidenceMap = stage2.confidence || {};
@@ -131,6 +133,8 @@ export function validateAndNormalize(
     licenseType: stage2.licenseType || "",
     licenseNumber: stage2.licenseNumber || "",
     licenseState: stage2.licenseState || "",
+    sessionPreference: "",
+    yearsOutOfSchool: stage1?.yearsOutOfSchool ?? "",
   };
 
   // 1. Force constants

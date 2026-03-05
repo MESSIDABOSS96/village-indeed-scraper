@@ -49,6 +49,7 @@ export async function runStage1(resumeText: string): Promise<Stage1Result> {
     careSettings: parsed.careSettings ?? [],
     languages: parsed.languages ?? [],
     workExperience: parsed.workExperience ?? null,
+    yearsOutOfSchool: parsed.yearsOutOfSchool ?? null,
   };
 }
 
