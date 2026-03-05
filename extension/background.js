@@ -152,9 +152,11 @@ async function runSyncCycle() {
     const { processedIds = {} } = await chrome.storage.local.get(
       "processedIds"
     );
-    const newCandidates = listData.candidates.filter(
-      (c) => !processedIds[normalizeIndeedUrl(c.profileUrl)]
-    );
+    const newCandidates = listData.candidates.filter((c) => {
+      const entry = processedIds[normalizeIndeedUrl(c.profileUrl)];
+      // Re-visit if never processed, old format (plain timestamp), or previous sync had no resume
+      return !entry || typeof entry === "number" || entry.hasResume !== true;
+    });
 
     const toProcess = newCandidates.slice(0, MAX_CANDIDATES_PER_CYCLE);
     console.log(
@@ -187,9 +189,21 @@ async function runSyncCycle() {
           continue;
         }
 
-        // 5. If resume PDF download URL is available, fetch and encode it
-        let resumePdfBase64 = "";
-        if (profileData.resumeDownloadUrl) {
+        // 5. Check for intercepted download URL if content script didn't find one
+        if (!profileData.resumeDownloadUrl) {
+          const interceptKey = `interceptedResumeUrl_${tab.id}`;
+          const stored = await chrome.storage.local.get(interceptKey);
+          if (stored[interceptKey]) {
+            profileData.resumeDownloadUrl = stored[interceptKey];
+            console.log("[Village] Using intercepted download URL:", profileData.resumeDownloadUrl);
+            await chrome.storage.local.remove(interceptKey);
+          }
+        }
+
+        // 6. If resume PDF download URL is available, fetch and encode it
+        // Use content-script-provided base64 if available (needed for blob: URLs)
+        let resumePdfBase64 = profileData.resumePdfBase64 || "";
+        if (!resumePdfBase64 && profileData.resumeDownloadUrl && !profileData.resumeDownloadUrl.startsWith("blob:")) {
           try {
             const pdfResp = await fetch(profileData.resumeDownloadUrl);
             if (pdfResp.ok) {
@@ -206,6 +220,8 @@ async function runSyncCycle() {
           } catch (pdfErr) {
             console.warn("[Village] Failed to download resume PDF:", pdfErr);
           }
+        } else if (resumePdfBase64) {
+          console.log("[Village] Using content-script-provided PDF base64:", resumePdfBase64.length, "chars");
         }
 
         // 6. POST to app's ingest endpoint
@@ -232,11 +248,14 @@ async function runSyncCycle() {
 
         if (resp.ok) {
           const result = await resp.json();
-          if (result.status !== "duplicate") {
+          if (result.status === "processed" || result.status === "updated") {
             newCount++;
           }
-          // Mark as processed using normalized URL
-          processedIds[normalizedUrl] = Date.now();
+          // Mark as processed with resume tracking
+          processedIds[normalizedUrl] = {
+            ts: Date.now(),
+            hasResume: !!resumePdfBase64,
+          };
           await chrome.storage.local.set({ processedIds });
         } else {
           console.error(
@@ -288,6 +307,57 @@ async function updateStatus(status, message) {
     lastSyncTime: new Date().toISOString(),
   });
 }
+
+// --- Download interception for resume PDFs ---
+
+// Track tabs where we're watching for downloads
+const watchingDownloadTabs = new Set();
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message.type === "watch_downloads" && sender.tab?.id) {
+    watchingDownloadTabs.add(sender.tab.id);
+    // Auto-clear after 15 seconds
+    setTimeout(() => watchingDownloadTabs.delete(sender.tab.id), 15000);
+  }
+});
+
+// Intercept downloads triggered by resume download button clicks
+chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
+  // Check if this download came from a tab we're watching
+  if (downloadItem.byExtensionId || !downloadItem.url) {
+    suggest();
+    return;
+  }
+
+  const filename = (downloadItem.filename || "").toLowerCase();
+  const url = (downloadItem.url || "").toLowerCase();
+  const mime = (downloadItem.mime || "").toLowerCase();
+
+  const isResume = filename.includes("resume") || filename.includes(".pdf") ||
+    url.includes("resume") || url.includes(".pdf") ||
+    mime.includes("pdf");
+
+  if (isResume) {
+    console.log("[Village] Intercepted resume download:", downloadItem.url);
+    // Cancel the download - we'll fetch the PDF ourselves
+    chrome.downloads.cancel(downloadItem.id);
+
+    // Store the URL so the content script's pending resolver can use it
+    // The background already fetches the PDF in the sync cycle when resumeDownloadUrl is set
+    // So we need to pass this URL back to the pending profile extraction
+    const tabId = downloadItem.tabId || -1;
+    const key = `${tabId}`;
+    const resolver = pendingResponses.get(key);
+    if (resolver) {
+      // The content script already sent its message; we need to update the URL
+      // Store it for the next check
+      chrome.storage.local.set({ [`interceptedResumeUrl_${tabId}`]: downloadItem.url });
+    }
+    watchingDownloadTabs.delete(tabId);
+  }
+
+  suggest();
+});
 
 // --- External triggers (from popup) ---
 

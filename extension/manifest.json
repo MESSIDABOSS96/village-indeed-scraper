@@ -3,7 +3,7 @@
   "name": "Village Indeed Scraper",
   "version": "1.0.0",
   "description": "Automatically scrapes candidate data from Indeed employer dashboard",
-  "permissions": ["alarms", "storage", "tabs"],
+  "permissions": ["alarms", "storage", "tabs", "downloads"],
   "host_permissions": [
     "https://employers.indeed.com/*",
     "https://village-indeed-scraper.vercel.app/*"

@@ -83,16 +83,21 @@ export async function POST(request: NextRequest) {
     payload.indeedCandidateUrl = normalizedUrl;
 
     const existing = await findInboxByIndeedId(normalizedUrl);
-    if (existing) {
-      return jsonResponse({ status: "duplicate", id: existing.id });
+    let existingByName: InboxItem | null = null;
+    if (!existing && payload.applicantName) {
+      existingByName = await findInboxByName(payload.applicantName);
     }
+    const duplicateOf = existing || existingByName;
 
-    // Secondary dedup: check by applicant name
-    if (payload.applicantName) {
-      const existingByName = await findInboxByName(payload.applicantName);
-      if (existingByName) {
-        return jsonResponse({ status: "duplicate", id: existingByName.id });
+    if (duplicateOf) {
+      const hasNewResumeData = !!payload.resumePdfBase64;
+      const existingNeedsUpdate =
+        !duplicateOf.processedRecord || duplicateOf.status === "error";
+
+      if (!hasNewResumeData || !existingNeedsUpdate) {
+        return jsonResponse({ status: "duplicate", id: duplicateOf.id });
       }
+      // Fall through to re-process using the existing item's ID
     }
 
     // 4. Parse location into city + state
@@ -113,21 +118,27 @@ export async function POST(request: NextRequest) {
       ? mapScreenerAnswers(payload.screenerAnswers)
       : { sessionPreference: "", interviewAvailability: "" };
 
-    // 6. Save to Inbox immediately
-    const itemId = uuidv4();
-    const inboxItem: InboxItem = {
-      id: itemId,
-      indeedApplicationId: payload.indeedCandidateUrl,
-      status: "processing",
-      receivedAt: payload.scrapedAt || new Date().toISOString(),
-      applicantName: payload.applicantName,
-      resumeFileName: "scraped",
-      jobTitle: payload.jobTitle || "",
-      disposition: "New",
-      interviewAvailability: screenerData.interviewAvailability || undefined,
-    };
+    // 6. Save to Inbox immediately (or update existing row for upsert)
+    const isUpsert = !!duplicateOf;
+    const itemId = duplicateOf ? duplicateOf.id : uuidv4();
 
-    await appendToInbox(inboxItem);
+    if (isUpsert) {
+      await updateInboxItem(itemId, { status: "processing" });
+      console.log("[Ingest] Upsert: re-processing existing candidate", itemId);
+    } else {
+      const inboxItem: InboxItem = {
+        id: itemId,
+        indeedApplicationId: payload.indeedCandidateUrl,
+        status: "processing",
+        receivedAt: payload.scrapedAt || new Date().toISOString(),
+        applicantName: payload.applicantName,
+        resumeFileName: "scraped",
+        jobTitle: payload.jobTitle || "",
+        disposition: "New",
+        interviewAvailability: screenerData.interviewAvailability || undefined,
+      };
+      await appendToInbox(inboxItem);
+    }
 
     // 7. Extract resume text: prefer PDF, fall back to DOM-scraped text
     let resumeText = payload.resumeText || "";
@@ -212,7 +223,10 @@ export async function POST(request: NextRequest) {
         resumeText: truncatedText,
       });
 
-      return jsonResponse({ status: "processed", id: itemId });
+      return jsonResponse({
+        status: isUpsert ? "updated" : "processed",
+        id: itemId,
+      });
     } catch (err) {
       await updateInboxItem(itemId, {
         status: "error",

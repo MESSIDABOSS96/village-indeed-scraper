@@ -452,6 +452,38 @@
     // Helper: search a document root for download links
     function findDownloadLink(root) {
       if (!root) return "";
+
+      // Strategy Indeed: exact data-testid for Indeed's download button
+      const indeedLink = root.querySelector('a[data-testid="download-resume-inline"]');
+      if (indeedLink) {
+        const href = indeedLink.getAttribute("href") || "";
+        if (href) {
+          console.log("[Village] Found Indeed download-resume-inline link:", href.slice(0, 200));
+          return href;
+        }
+      }
+
+      // Strategy 0 (highest priority): Find PDF viewer embed/object/iframe src
+      const pdfViewers = root.querySelectorAll(
+        'embed[src], object[data], iframe[src]'
+      );
+      for (const viewer of pdfViewers) {
+        const src = viewer.getAttribute("src") || viewer.getAttribute("data") || "";
+        if (src && (src.includes(".pdf") || src.includes("resume") || src.includes("document"))) {
+          console.log("[Village] Found PDF viewer src (by keyword):", src.slice(0, 200));
+          return src;
+        }
+      }
+      // Also check for any embed/object (PDF viewers often don't have "pdf" in URL)
+      for (const viewer of pdfViewers) {
+        const src = viewer.getAttribute("src") || viewer.getAttribute("data") || "";
+        const type = (viewer.getAttribute("type") || "").toLowerCase();
+        if (src && (type.includes("pdf") || type === "")) {
+          console.log("[Village] Found PDF viewer src (by type/fallback):", src.slice(0, 200));
+          return src;
+        }
+      }
+
       // Strategy 1: aria-label containing "download"
       const ariaEl = root.querySelector(
         'a[aria-label*="ownload"], button[aria-label*="ownload"], [role="link"][aria-label*="ownload"]'
@@ -488,6 +520,102 @@
       return "";
     }
 
+    // Fallback: find and click a "Download resume" button, intercept the resulting URL
+    function tryClickDownload() {
+      return new Promise((resolve) => {
+        // Find any element with "download resume" text
+        const allElements = document.querySelectorAll("a, button, [role='button']");
+        let downloadBtn = null;
+        for (const el of allElements) {
+          const text = (el.textContent || "").toLowerCase().trim();
+          if (text.includes("download resume") || text.includes("download cv")) {
+            downloadBtn = el;
+            console.log("[Village] Found download button (no href):", el.outerHTML.slice(0, 500));
+            break;
+          }
+        }
+
+        if (!downloadBtn) {
+          console.log("[Village] No download button found to click");
+          resolve("");
+          return;
+        }
+
+        let resolved = false;
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            observer.disconnect();
+            console.log("[Village] Click fallback timed out");
+            resolve("");
+          }
+        }, 8000);
+
+        // Watch for dynamically-created <a> elements with download attributes or href
+        const observer = new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+              if (node.nodeType !== 1) continue;
+              // Check the node itself and its children
+              const anchors = node.tagName === "A" ? [node] : node.querySelectorAll ? [...node.querySelectorAll("a")] : [];
+              for (const a of anchors) {
+                const href = a.getAttribute("href") || "";
+                if (href && (href.includes(".pdf") || href.includes("resume") || href.includes("document") || a.hasAttribute("download"))) {
+                  if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeout);
+                    observer.disconnect();
+                    console.log("[Village] Intercepted dynamic download link:", href.slice(0, 200));
+                    resolve(href);
+                  }
+                  return;
+                }
+              }
+              // Check for embed/object/iframe that appeared
+              const viewers = node.tagName && ["EMBED", "OBJECT", "IFRAME"].includes(node.tagName) ? [node] : node.querySelectorAll ? [...node.querySelectorAll("embed, object, iframe")] : [];
+              for (const viewer of viewers) {
+                const src = viewer.getAttribute("src") || viewer.getAttribute("data") || "";
+                if (src) {
+                  if (!resolved) {
+                    resolved = true;
+                    clearTimeout(timeout);
+                    observer.disconnect();
+                    console.log("[Village] Intercepted dynamic viewer src:", src.slice(0, 200));
+                    resolve(src);
+                  }
+                  return;
+                }
+              }
+            }
+          }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["href", "src", "data"] });
+
+        // Intercept URL.createObjectURL
+        const origCreateObjectURL = URL.createObjectURL;
+        URL.createObjectURL = function (obj) {
+          const url = origCreateObjectURL.call(URL, obj);
+          console.log("[Village] Intercepted createObjectURL:", url);
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            observer.disconnect();
+            URL.createObjectURL = origCreateObjectURL;
+            resolve(url);
+          }
+          return url;
+        };
+
+        // Click the button
+        console.log("[Village] Clicking download button...");
+        downloadBtn.click();
+
+        // Also try sending the click result back to background for download interception
+        chrome.runtime.sendMessage({ type: "watch_downloads", tabId: true });
+      });
+    }
+
     function resolveUrl(href) {
       if (!href) return "";
       try {
@@ -495,6 +623,44 @@
       } catch (_) {
         return href;
       }
+    }
+
+    // Debug: dump resume section DOM so we can see what's actually there
+    if (resumeSection) {
+      const container = resumeSection.closest("section") || resumeSection.parentElement;
+      console.log("[Village] Resume section HTML:", container?.innerHTML?.slice(0, 2000));
+    }
+
+    // Debug: dump all embeds, objects, iframes, and download-like buttons on the page
+    const debugEmbeds = document.querySelectorAll("embed, object, iframe");
+    console.log("[Village] DEBUG - Found", debugEmbeds.length, "embed/object/iframe elements on page:");
+    debugEmbeds.forEach((el, i) => {
+      console.log("[Village]  ", i, el.tagName, {
+        src: el.getAttribute("src")?.slice(0, 200),
+        data: el.getAttribute("data")?.slice(0, 200),
+        type: el.getAttribute("type"),
+      });
+    });
+    const debugDownloadBtns = document.querySelectorAll("a, button, [role='button']");
+    for (const el of debugDownloadBtns) {
+      const text = (el.textContent || "").toLowerCase().trim();
+      if (text.includes("download") || text.includes("resume")) {
+        console.log("[Village] DEBUG - Download/resume element:", {
+          tag: el.tagName,
+          text: text.slice(0, 100),
+          href: el.getAttribute("href")?.slice(0, 200),
+          outerHTML: el.outerHTML.slice(0, 500),
+        });
+      }
+    }
+
+    // Wait for the resume panel to fully load (Indeed creates blob URL when PDF viewer loads)
+    console.log("[Village] Waiting for ResumePanel_loaded...");
+    const resumePanel = await waitForElement('[data-testid="ResumePanel_loaded"]', 10000);
+    if (resumePanel) {
+      console.log("[Village] ResumePanel_loaded found");
+    } else {
+      console.log("[Village] ResumePanel_loaded not found, continuing with fallback waits");
     }
 
     // Wait for the resume section / download link to render (loads lazily after nameplate)
@@ -559,6 +725,35 @@
       console.log("[Village] Download link after extended wait:", resumeDownloadUrl || "not found");
     }
 
+    // Fallback: click the "Download resume" button and intercept the download
+    if (!resumeDownloadUrl) {
+      console.log("[Village] Trying click-to-download fallback...");
+      const clickResult = await tryClickDownload();
+      if (clickResult) {
+        resumeDownloadUrl = clickResult;
+        console.log("[Village] Got URL via click fallback:", resumeDownloadUrl.slice(0, 200));
+      }
+    }
+
+    // If the URL is a blob: URL, fetch it in the content script (blob URLs are page-scoped)
+    let resumePdfBase64 = "";
+    if (resumeDownloadUrl && resumeDownloadUrl.startsWith("blob:")) {
+      try {
+        console.log("[Village] Fetching blob URL in content script:", resumeDownloadUrl.slice(0, 200));
+        const resp = await fetch(resumeDownloadUrl);
+        const blob = await resp.blob();
+        resumePdfBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result.split(",")[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        console.log("[Village] Fetched blob PDF in content script:", resumePdfBase64.length, "chars");
+      } catch (e) {
+        console.warn("[Village] Failed to fetch blob URL:", e);
+      }
+    }
+
     console.log("[Village] Extracted profile:", {
       name,
       location,
@@ -566,6 +761,7 @@
       screenerCount: screenerAnswers.length,
       resumeLength: resumeText.length,
       resumeDownloadUrl: resumeDownloadUrl ? "found" : "not found",
+      resumePdfBase64Length: resumePdfBase64.length,
     });
 
     chrome.runtime.sendMessage({
@@ -576,6 +772,7 @@
       screenerAnswers,
       resumeText,
       resumeDownloadUrl,
+      resumePdfBase64,
     });
   }
 })();
