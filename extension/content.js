@@ -448,37 +448,115 @@
 
     // Extract resume download URL
     let resumeDownloadUrl = "";
-    const downloadLinks = document.querySelectorAll("a[href], button[data-href]");
-    for (const el of downloadLinks) {
-      const text = (el.textContent || "").toLowerCase();
-      const href = el.getAttribute("href") || el.getAttribute("data-href") || "";
-      if (
-        (text.includes("download resume") || text.includes("download cv")) &&
-        href
-      ) {
-        // Resolve relative URLs
-        try {
-          resumeDownloadUrl = new URL(href, window.location.origin).href;
-        } catch (_) {
-          resumeDownloadUrl = href;
+
+    // Helper: search a document root for download links
+    function findDownloadLink(root) {
+      if (!root) return "";
+      // Strategy 1: aria-label containing "download"
+      const ariaEl = root.querySelector(
+        'a[aria-label*="ownload"], button[aria-label*="ownload"], [role="link"][aria-label*="ownload"]'
+      );
+      if (ariaEl) {
+        const href = ariaEl.getAttribute("href") || ariaEl.getAttribute("data-href") || "";
+        if (href) return href;
+      }
+      // Strategy 2: data-testid containing "download"
+      const testIdEl = root.querySelector(
+        'a[data-testid*="download"], button[data-testid*="download"]'
+      );
+      if (testIdEl) {
+        const href = testIdEl.getAttribute("href") || testIdEl.getAttribute("data-href") || "";
+        if (href) return href;
+      }
+      // Strategy 3: text content matching "download resume" / "download cv"
+      const allClickable = root.querySelectorAll("a[href], button[data-href], a[download]");
+      for (const el of allClickable) {
+        const text = (el.textContent || "").toLowerCase();
+        const href = el.getAttribute("href") || el.getAttribute("data-href") || "";
+        if ((text.includes("download resume") || text.includes("download cv")) && href) {
+          return href;
+        }
+      }
+      // Strategy 4: direct PDF links
+      const pdfLinks = root.querySelectorAll('a[href*=".pdf"], a[href*="resume"], a[download]');
+      for (const a of pdfLinks) {
+        const href = a.getAttribute("href") || "";
+        if (href && (href.includes("resume") || href.endsWith(".pdf") || a.hasAttribute("download"))) {
+          return href;
+        }
+      }
+      return "";
+    }
+
+    function resolveUrl(href) {
+      if (!href) return "";
+      try {
+        return new URL(href, window.location.origin).href;
+      } catch (_) {
+        return href;
+      }
+    }
+
+    // Wait for the resume section / download link to render (loads lazily after nameplate)
+    console.log("[Village] Waiting for resume download link to appear...");
+    await new Promise((r) => setTimeout(r, 3000));
+
+    // Try expanding the Resume section if it's collapsed
+    for (const h of headings) {
+      const hText = (h.textContent || "").trim().toLowerCase();
+      if (hText === "resume" || hText === "resume:") {
+        const clickTarget = h.closest("button") || h.closest("[role='button']") || h;
+        if (clickTarget && clickTarget !== h) {
+          console.log("[Village] Clicking resume heading to expand section");
+          clickTarget.click();
+          await new Promise((r) => setTimeout(r, 2000));
         }
         break;
       }
     }
-    // Fallback: look for direct PDF links in resume section
+
+    // Search main document
+    resumeDownloadUrl = resolveUrl(findDownloadLink(document));
+    console.log("[Village] Download link search (main document):", resumeDownloadUrl || "not found");
+
+    // Search inside iframes if not found
     if (!resumeDownloadUrl) {
-      const pdfLinks = document.querySelectorAll('a[href*=".pdf"], a[href*="resume"], a[download]');
-      for (const a of pdfLinks) {
-        const href = a.getAttribute("href") || "";
-        if (href && (href.includes("resume") || href.endsWith(".pdf") || a.hasAttribute("download"))) {
-          try {
-            resumeDownloadUrl = new URL(href, window.location.origin).href;
-          } catch (_) {
-            resumeDownloadUrl = href;
+      const iframes = document.querySelectorAll("iframe");
+      console.log("[Village] Checking", iframes.length, "iframes for download link");
+      for (const iframe of iframes) {
+        try {
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+          const href = findDownloadLink(iframeDoc);
+          if (href) {
+            resumeDownloadUrl = resolveUrl(href);
+            console.log("[Village] Found download link in iframe:", resumeDownloadUrl);
+            break;
           }
-          break;
+        } catch (e) {
+          console.log("[Village] Cannot access iframe (cross-origin):", e.message);
         }
       }
+    }
+
+    // Last resort: wait longer and retry once
+    if (!resumeDownloadUrl) {
+      console.log("[Village] Download link not found yet, waiting 5 more seconds...");
+      await new Promise((r) => setTimeout(r, 5000));
+      resumeDownloadUrl = resolveUrl(findDownloadLink(document));
+      // Re-check iframes
+      if (!resumeDownloadUrl) {
+        for (const iframe of document.querySelectorAll("iframe")) {
+          try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+            const href = findDownloadLink(iframeDoc);
+            if (href) {
+              resumeDownloadUrl = resolveUrl(href);
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+      console.log("[Village] Download link after extended wait:", resumeDownloadUrl || "not found");
     }
 
     console.log("[Village] Extracted profile:", {

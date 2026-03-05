@@ -145,7 +145,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const truncatedText = resumeText.slice(0, 49000);
+    // Prepend known metadata so AI always has name/location/job even if PDF fails
+    const metadataHeader = [
+      "--- CANDIDATE INFO ---",
+      payload.applicantName ? `Name: ${payload.applicantName}` : "",
+      payload.location ? `Location: ${payload.location}` : "",
+      payload.jobTitle ? `Job: ${payload.jobTitle}` : "",
+      "--- RESUME TEXT ---",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const fullText = metadataHeader + "\n" + resumeText;
+
+    const truncatedText = fullText.slice(0, 49000);
     await updateInboxItem(itemId, { resumeText: truncatedText });
 
     // 8. Run AI extraction pipeline
@@ -164,6 +176,13 @@ export async function POST(request: NextRequest) {
         stage2,
         stage1
       );
+
+      // Fallback: split applicantName if AI didn't extract first/last name
+      if (!record.firstName && !record.lastName && payload.applicantName) {
+        const parts = payload.applicantName.trim().split(/\s+/);
+        record.firstName = parts[0] || "";
+        record.lastName = parts.slice(1).join(" ") || "";
+      }
 
       // 9. Merge screener-derived fields
       if (screenerData.sessionPreference) {
