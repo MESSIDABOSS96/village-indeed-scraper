@@ -218,11 +218,31 @@ export async function getInboxItems(): Promise<InboxItem[]> {
   return rows.map(rowToInboxItem);
 }
 
+function normalizeIndeedUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const id = parsed.searchParams.get("id");
+    if (id) {
+      return `https://employers.indeed.com/candidates/view?id=${id}`;
+    }
+  } catch {}
+  return url;
+}
+
 export async function findInboxByIndeedId(
   indeedApplicationId: string
 ): Promise<InboxItem | null> {
   const items = await getInboxItems();
-  return items.find((i) => i.indeedApplicationId === indeedApplicationId) ?? null;
+  const normalizedSearch = normalizeIndeedUrl(indeedApplicationId);
+  return items.find((i) => normalizeIndeedUrl(i.indeedApplicationId) === normalizedSearch) ?? null;
+}
+
+export async function findInboxByName(
+  applicantName: string
+): Promise<InboxItem | null> {
+  const items = await getInboxItems();
+  const normalized = applicantName.trim().toLowerCase();
+  return items.find((i) => i.applicantName.trim().toLowerCase() === normalized) ?? null;
 }
 
 export async function updateInboxItem(
@@ -252,4 +272,80 @@ export async function updateInboxItem(
     valueInputOption: "RAW",
     requestBody: { values: [inboxItemToRow(merged)] },
   });
+}
+
+export async function deduplicateInbox(): Promise<{ removed: number }> {
+  await ensureInboxSheet();
+  const { sheets, sheetId } = await getInboxSheet();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `${INBOX_SHEET}!A2:N`,
+  });
+
+  const rows = res.data.values ?? [];
+  if (rows.length === 0) return { removed: 0 };
+
+  // Group rows by normalized Indeed URL, then by name as fallback
+  const seen = new Map<string, number>(); // key → first row index
+  const rowsToDelete: number[] = []; // 0-indexed row positions in the data
+
+  for (let i = 0; i < rows.length; i++) {
+    const item = rowToInboxItem(rows[i]);
+    const urlKey = normalizeIndeedUrl(item.indeedApplicationId);
+    const nameKey = item.applicantName.trim().toLowerCase();
+    const dedupKey = urlKey || nameKey;
+
+    if (!dedupKey) continue;
+
+    const existingIdx = seen.get(dedupKey);
+    if (existingIdx !== undefined) {
+      // Keep the one with status="processed", or the first one
+      const existingItem = rowToInboxItem(rows[existingIdx]);
+      if (item.status === "processed" && existingItem.status !== "processed") {
+        // Replace: delete the old one, keep this one
+        rowsToDelete.push(existingIdx);
+        seen.set(dedupKey, i);
+      } else {
+        // Delete this duplicate
+        rowsToDelete.push(i);
+      }
+    } else {
+      seen.set(dedupKey, i);
+      // Also register the name key for name-based dedup
+      if (nameKey && dedupKey !== nameKey && !seen.has(nameKey)) {
+        seen.set(nameKey, i);
+      }
+    }
+  }
+
+  if (rowsToDelete.length === 0) return { removed: 0 };
+
+  // Delete rows from bottom to top to preserve indices
+  const sortedDesc = [...rowsToDelete].sort((a, b) => b - a);
+
+  // Get the Inbox sheet's numeric ID for batchUpdate
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+  const inboxSheet = meta.data.sheets?.find(
+    (s) => s.properties?.title === INBOX_SHEET
+  );
+  const inboxSheetId = inboxSheet?.properties?.sheetId ?? 0;
+
+  const requests = sortedDesc.map((dataRowIdx) => ({
+    deleteDimension: {
+      range: {
+        sheetId: inboxSheetId,
+        dimension: "ROWS" as const,
+        startIndex: dataRowIdx + 1, // +1 for header row
+        endIndex: dataRowIdx + 2,
+      },
+    },
+  }));
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: sheetId,
+    requestBody: { requests },
+  });
+
+  return { removed: rowsToDelete.length };
 }

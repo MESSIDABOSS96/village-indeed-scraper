@@ -446,12 +446,48 @@
       }
     }
 
+    // Extract resume download URL
+    let resumeDownloadUrl = "";
+    const downloadLinks = document.querySelectorAll("a[href], button[data-href]");
+    for (const el of downloadLinks) {
+      const text = (el.textContent || "").toLowerCase();
+      const href = el.getAttribute("href") || el.getAttribute("data-href") || "";
+      if (
+        (text.includes("download resume") || text.includes("download cv")) &&
+        href
+      ) {
+        // Resolve relative URLs
+        try {
+          resumeDownloadUrl = new URL(href, window.location.origin).href;
+        } catch (_) {
+          resumeDownloadUrl = href;
+        }
+        break;
+      }
+    }
+    // Fallback: look for direct PDF links in resume section
+    if (!resumeDownloadUrl) {
+      const pdfLinks = document.querySelectorAll('a[href*=".pdf"], a[href*="resume"], a[download]');
+      for (const a of pdfLinks) {
+        const href = a.getAttribute("href") || "";
+        if (href && (href.includes("resume") || href.endsWith(".pdf") || a.hasAttribute("download"))) {
+          try {
+            resumeDownloadUrl = new URL(href, window.location.origin).href;
+          } catch (_) {
+            resumeDownloadUrl = href;
+          }
+          break;
+        }
+      }
+    }
+
     console.log("[Village] Extracted profile:", {
       name,
       location,
       jobTitle,
       screenerCount: screenerAnswers.length,
       resumeLength: resumeText.length,
+      resumeDownloadUrl: resumeDownloadUrl ? "found" : "not found",
     });
 
     chrome.runtime.sendMessage({
@@ -461,6 +497,7 @@
       jobTitle,
       screenerAnswers,
       resumeText,
+      resumeDownloadUrl,
     });
   }
 })();

@@ -4,6 +4,18 @@ const DEFAULT_POLL_MINUTES = 5;
 const MAX_CANDIDATES_PER_CYCLE = 20;
 const NAV_DELAY_MS = 2000;
 
+// Extract the Indeed candidate ID from a profile URL to use as a stable dedup key
+function normalizeIndeedUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const id = parsed.searchParams.get("id");
+    if (id) {
+      return `https://employers.indeed.com/candidates/view?id=${id}`;
+    }
+  } catch (_) {}
+  return url;
+}
+
 // --- Alarm & Lifecycle ---
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -136,12 +148,12 @@ async function runSyncCycle() {
       return;
     }
 
-    // 3. Filter out already-processed candidates
+    // 3. Filter out already-processed candidates (using normalized URLs)
     const { processedIds = {} } = await chrome.storage.local.get(
       "processedIds"
     );
     const newCandidates = listData.candidates.filter(
-      (c) => !processedIds[c.profileUrl]
+      (c) => !processedIds[normalizeIndeedUrl(c.profileUrl)]
     );
 
     const toProcess = newCandidates.slice(0, MAX_CANDIDATES_PER_CYCLE);
@@ -175,13 +187,36 @@ async function runSyncCycle() {
           continue;
         }
 
-        // 5. POST to app's ingest endpoint
+        // 5. If resume PDF download URL is available, fetch and encode it
+        let resumePdfBase64 = "";
+        if (profileData.resumeDownloadUrl) {
+          try {
+            const pdfResp = await fetch(profileData.resumeDownloadUrl);
+            if (pdfResp.ok) {
+              const blob = await pdfResp.blob();
+              const arrayBuffer = await blob.arrayBuffer();
+              const bytes = new Uint8Array(arrayBuffer);
+              let binary = "";
+              for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              resumePdfBase64 = btoa(binary);
+              console.log("[Village] Downloaded resume PDF:", resumePdfBase64.length, "chars base64");
+            }
+          } catch (pdfErr) {
+            console.warn("[Village] Failed to download resume PDF:", pdfErr);
+          }
+        }
+
+        // 6. POST to app's ingest endpoint
+        const normalizedUrl = normalizeIndeedUrl(candidate.profileUrl);
         const payload = {
-          indeedCandidateUrl: candidate.profileUrl,
+          indeedCandidateUrl: normalizedUrl,
           applicantName: profileData.name || candidate.name,
           location: profileData.location || candidate.location || "",
           jobTitle: profileData.jobTitle || candidate.jobTitle || "",
           resumeText: profileData.resumeText || "",
+          resumePdfBase64: resumePdfBase64 || undefined,
           screenerAnswers: profileData.screenerAnswers || [],
           scrapedAt: new Date().toISOString(),
         };
@@ -200,8 +235,8 @@ async function runSyncCycle() {
           if (result.status !== "duplicate") {
             newCount++;
           }
-          // Mark as processed
-          processedIds[candidate.profileUrl] = Date.now();
+          // Mark as processed using normalized URL
+          processedIds[normalizedUrl] = Date.now();
           await chrome.storage.local.set({ processedIds });
         } else {
           console.error(

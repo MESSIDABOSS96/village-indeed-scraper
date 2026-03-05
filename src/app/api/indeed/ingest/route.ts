@@ -4,9 +4,11 @@ import { mapScreenerAnswers } from "@/lib/indeed";
 import { runStage1, runStage2 } from "@/lib/claude";
 import { validateAndNormalize } from "@/lib/validation";
 import { calculateLeadScore } from "@/lib/scoring";
+import { extractTextFromPdf } from "@/lib/pdf";
 import {
   appendToInbox,
   findInboxByIndeedId,
+  findInboxByName,
   updateInboxItem,
 } from "@/lib/sheets";
 import type { InboxItem } from "@/lib/types";
@@ -29,8 +31,20 @@ interface IngestPayload {
   location: string;
   jobTitle: string;
   resumeText: string;
+  resumePdfBase64?: string;
   screenerAnswers?: { question: string; answer: string }[];
   scrapedAt: string;
+}
+
+function normalizeIndeedUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const id = parsed.searchParams.get("id");
+    if (id) {
+      return `https://employers.indeed.com/candidates/view?id=${id}`;
+    }
+  } catch {}
+  return url;
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
@@ -64,10 +78,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Dedup check
-    const existing = await findInboxByIndeedId(payload.indeedCandidateUrl);
+    // 3. Normalize URL and dedup check
+    const normalizedUrl = normalizeIndeedUrl(payload.indeedCandidateUrl);
+    payload.indeedCandidateUrl = normalizedUrl;
+
+    const existing = await findInboxByIndeedId(normalizedUrl);
     if (existing) {
       return jsonResponse({ status: "duplicate", id: existing.id });
+    }
+
+    // Secondary dedup: check by applicant name
+    if (payload.applicantName) {
+      const existingByName = await findInboxByName(payload.applicantName);
+      if (existingByName) {
+        return jsonResponse({ status: "duplicate", id: existingByName.id });
+      }
     }
 
     // 4. Parse location into city + state
@@ -104,8 +129,23 @@ export async function POST(request: NextRequest) {
 
     await appendToInbox(inboxItem);
 
-    // 7. Truncate resume text for Sheets cell limit
-    const truncatedText = (payload.resumeText || "").slice(0, 49000);
+    // 7. Extract resume text: prefer PDF, fall back to DOM-scraped text
+    let resumeText = payload.resumeText || "";
+
+    if (payload.resumePdfBase64) {
+      try {
+        const pdfBuffer = Buffer.from(payload.resumePdfBase64, "base64");
+        const pdfText = await extractTextFromPdf(pdfBuffer);
+        if (pdfText && pdfText.trim().length > 0) {
+          resumeText = pdfText;
+          console.log("[Ingest] Extracted resume text from PDF:", pdfText.length, "chars");
+        }
+      } catch (pdfErr) {
+        console.warn("[Ingest] PDF parsing failed, falling back to DOM text:", pdfErr);
+      }
+    }
+
+    const truncatedText = resumeText.slice(0, 49000);
     await updateInboxItem(itemId, { resumeText: truncatedText });
 
     // 8. Run AI extraction pipeline
