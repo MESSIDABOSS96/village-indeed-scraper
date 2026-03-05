@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Village Indeed Scraper",
+  "version": "1.0.0",
+  "description": "Automatically scrapes candidate data from Indeed employer dashboard",
+  "permissions": ["alarms", "storage", "tabs"],
+  "host_permissions": [
+    "https://employers.indeed.com/*",
+    "https://village-indeed-scraper.vercel.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://employers.indeed.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

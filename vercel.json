@@ -8,6 +8,9 @@
     },
     "src/app/api/indeed/process/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/indeed/ingest/route.ts": {
+      "maxDuration": 60
     }
   }
 }

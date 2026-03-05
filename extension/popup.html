@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Village Indeed Scraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Village Scraper</h1>
+
+    <div class="status-bar">
+      <span id="statusDot" class="dot"></span>
+      <span id="statusText">Not synced yet</span>
+    </div>
+    <div id="lastSyncTime" class="meta"></div>
+
+    <div class="section">
+      <label for="appUrl">App URL</label>
+      <input type="url" id="appUrl" placeholder="https://your-app.vercel.app">
+    </div>
+
+    <div class="section">
+      <label for="apiKey">API Key</label>
+      <input type="password" id="apiKey" placeholder="Shared secret">
+    </div>
+
+    <div class="section">
+      <label for="pollInterval">Poll Interval</label>
+      <select id="pollInterval">
+        <option value="1">Every 1 min</option>
+        <option value="5" selected>Every 5 min</option>
+        <option value="15">Every 15 min</option>
+        <option value="30">Every 30 min</option>
+      </select>
+    </div>
+
+    <div class="actions">
+      <button id="syncNow" class="btn primary">Sync Now</button>
+      <button id="saveSettings" class="btn">Save Settings</button>
+    </div>
+
+    <div class="actions">
+      <button id="clearHistory" class="btn danger">Clear History</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
