@@ -101,9 +101,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Map screener answers
+    console.log(`[Ingest] Screener answers received: ${JSON.stringify(payload.screenerAnswers ?? [])}`);
     const screenerData = payload.screenerAnswers?.length
       ? mapScreenerAnswers(payload.screenerAnswers)
       : { sessionPreference: "", interviewAvailability: "" };
+    console.log(`[Ingest] Screener mapped: ${JSON.stringify(screenerData)}`);
 
     // 6. Extract resume text: prefer PDF, fall back to DOM-scraped text
     let resumeText = payload.resumeText || "";
@@ -162,6 +164,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 9. Merge screener-derived fields
+      console.log(`[Ingest] Merging sessionPreference: screener="${screenerData.sessionPreference}", record="${record.sessionPreference ?? ""}"`);
       if (screenerData.sessionPreference) {
         record.sessionPreference = screenerData.sessionPreference;
       }
@@ -175,7 +178,9 @@ export async function POST(request: NextRequest) {
       }
 
       // 10. LinkedIn lookup
+      console.log(`[Ingest] LinkedIn lookup check: linkedinUrl="${record.linkedinUrl ?? ""}", firstName="${record.firstName ?? ""}", lastName="${record.lastName ?? ""}"`);
       if (!record.linkedinUrl && record.firstName && record.lastName) {
+        console.log("[Ingest] Attempting LinkedIn lookup...");
         try {
           const result = await lookupLinkedIn(
             record.firstName,
@@ -183,12 +188,15 @@ export async function POST(request: NextRequest) {
             record.city,
             record.stateRegion
           );
+          console.log(`[Ingest] LinkedIn lookup result: ${JSON.stringify(result)}`);
           if (result.linkedinUrl) {
             record.linkedinUrl = result.linkedinUrl;
           }
         } catch (err) {
           console.warn("[Ingest] LinkedIn lookup failed:", err);
         }
+      } else {
+        console.log("[Ingest] LinkedIn lookup skipped");
       }
 
       // 11. Calculate lead score
