@@ -105,23 +105,7 @@ export async function POST(request: NextRequest) {
       ? mapScreenerAnswers(payload.screenerAnswers)
       : { sessionPreference: "", interviewAvailability: "" };
 
-    // 6. Save to Inbox immediately
-    const itemId = uuidv4();
-
-    const inboxItem: InboxItem = {
-      id: itemId,
-      indeedApplicationId: payload.indeedCandidateUrl,
-      status: "processing",
-      receivedAt: payload.scrapedAt || new Date().toISOString(),
-      applicantName: payload.applicantName,
-      resumeFileName: "scraped",
-      jobTitle: payload.jobTitle || "",
-      disposition: "New",
-      interviewAvailability: screenerData.interviewAvailability || undefined,
-    };
-    await appendToInbox(inboxItem);
-
-    // 7. Extract resume text: prefer PDF, fall back to DOM-scraped text
+    // 6. Extract resume text: prefer PDF, fall back to DOM-scraped text
     let resumeText = payload.resumeText || "";
 
     if (payload.resumePdfBase64) {
@@ -138,14 +122,27 @@ export async function POST(request: NextRequest) {
     }
 
     const truncatedText = resumeText.slice(0, 49000);
-    await updateInboxItem(itemId, { resumeText: truncatedText });
+
+    // 7. Save to Inbox with resume text included
+    const itemId = uuidv4();
+
+    const inboxItem: InboxItem = {
+      id: itemId,
+      indeedApplicationId: payload.indeedCandidateUrl,
+      status: truncatedText ? "processing" : "error",
+      receivedAt: payload.scrapedAt || new Date().toISOString(),
+      applicantName: payload.applicantName,
+      resumeFileName: "scraped",
+      jobTitle: payload.jobTitle || "",
+      disposition: "New",
+      interviewAvailability: screenerData.interviewAvailability || undefined,
+      resumeText: truncatedText || undefined,
+      errorMessage: truncatedText ? undefined : "No resume text extracted from page",
+    };
+    await appendToInbox(inboxItem);
 
     // 8. Run AI extraction pipeline
     if (!truncatedText) {
-      await updateInboxItem(itemId, {
-        status: "error",
-        errorMessage: "No resume text extracted from page",
-      });
       return jsonResponse({ status: "error", id: itemId });
     }
 
