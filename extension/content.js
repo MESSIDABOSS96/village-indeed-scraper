@@ -343,10 +343,44 @@
     // Extract screener questions and answers
     const screenerAnswers = [];
 
-    // Strategy 1: Use data-testid selectors (Indeed's current DOM structure)
-    const screenerContainer = document.querySelector(
+    // Find the screener section by heading text or data-testid
+    let screenerContainer = null;
+
+    // Try data-testid first
+    screenerContainer = document.querySelector(
       '[data-testid="Screener questions"], [data-testid="ScreenerAnswersRemoteModule"]'
     );
+
+    // Try finding heading containing "Screener questions"
+    if (!screenerContainer) {
+      const allHeadings = document.querySelectorAll(
+        "h2, h3, h4, h5, [role='heading'], button, [aria-expanded]"
+      );
+      for (const h of allHeadings) {
+        if (h.textContent?.toLowerCase().includes("screener question")) {
+          // Walk up to find the expandable section container
+          screenerContainer =
+            h.closest("section") ||
+            h.closest('[class*="card"]') ||
+            h.closest('[class*="panel"]') ||
+            h.parentElement?.parentElement ||
+            h.parentElement;
+          break;
+        }
+      }
+    }
+
+    // Try any data-testid containing "screener" (case-insensitive)
+    if (!screenerContainer) {
+      const allTestIdEls = document.querySelectorAll("[data-testid]");
+      for (const el of allTestIdEls) {
+        if (el.getAttribute("data-testid")?.toLowerCase().includes("screener")) {
+          screenerContainer = el;
+          break;
+        }
+      }
+    }
+
     if (screenerContainer) {
       // Expand accordion if collapsed
       const toggleBtn = screenerContainer.querySelector(
@@ -357,77 +391,89 @@
         await new Promise((r) => setTimeout(r, 500));
       }
 
-      // Find the answers module (may be the container itself or nested)
-      const answersModule =
-        screenerContainer.querySelector(
-          '[data-testid="ScreenerAnswersRemoteModule"]'
-        ) || screenerContainer;
-
-      // Each Q&A pair lives in a div[id^="answer-and-question-"]
-      const qaPairs = answersModule.querySelectorAll(
-        'div[id^="answer-and-question-"]'
+      // Strategy 1: Bold/strong text (questions) followed by blockquote or bordered elements (answers)
+      const boldEls = screenerContainer.querySelectorAll(
+        "strong, b, h4, h3, [style*='font-weight']"
       );
-      for (const pair of qaPairs) {
-        const questionEl = pair.querySelector("h4");
-        const answerEl = questionEl
-          ? questionEl.nextElementSibling
-          : null;
-        if (questionEl && answerEl) {
-          screenerAnswers.push({
-            question: questionEl.textContent?.trim() || "",
-            answer: answerEl.textContent?.trim() || "",
-          });
+      for (const boldEl of boldEls) {
+        const qText = boldEl.textContent?.trim();
+        if (!qText || qText.toLowerCase().includes("screener question")) continue;
+
+        // Look for the answer: next sibling blockquote, bordered div, or next text block
+        let answerText = "";
+        let sibling = boldEl.nextElementSibling;
+        // If bold is inside a parent, check parent's next sibling too
+        if (!sibling && boldEl.parentElement) {
+          sibling = boldEl.parentElement.nextElementSibling;
+        }
+
+        if (sibling) {
+          // Check for blockquote or element with left border (blue bar style)
+          const blockquote = sibling.matches?.("blockquote")
+            ? sibling
+            : sibling.querySelector?.("blockquote");
+          if (blockquote) {
+            answerText = blockquote.textContent?.trim() || "";
+          } else {
+            const style = window.getComputedStyle(sibling);
+            if (
+              style.borderLeftWidth &&
+              parseInt(style.borderLeftWidth) > 0
+            ) {
+              answerText = sibling.textContent?.trim() || "";
+            } else {
+              // Check children for bordered elements
+              const borderedChild = sibling.querySelector(
+                "blockquote, [style*='border-left']"
+              );
+              if (borderedChild) {
+                answerText = borderedChild.textContent?.trim() || "";
+              } else {
+                answerText = sibling.textContent?.trim() || "";
+              }
+            }
+          }
+        }
+
+        if (qText && answerText && answerText !== qText) {
+          screenerAnswers.push({ question: qText, answer: answerText });
         }
       }
-    }
 
-    // Strategy 2: Fallback — find screener heading and look for dt/dd pairs
-    if (screenerAnswers.length === 0) {
-      const headingsForScreener = document.querySelectorAll(
-        "h2, h3, h4, [role='heading']"
-      );
-      let screenerSection = null;
-      for (const h of headingsForScreener) {
-        if (h.textContent?.toLowerCase().includes("screener question")) {
-          screenerSection = h;
-          break;
-        }
-      }
-      if (screenerSection) {
-        const container =
-          screenerSection.closest("section") ||
-          screenerSection.parentElement;
-        if (container) {
-          const dts = container.querySelectorAll("dt, .question");
-          const dds = container.querySelectorAll("dd, .answer");
-          for (let i = 0; i < Math.min(dts.length, dds.length); i++) {
+      // Strategy 2: div[id^="answer-and-question-"] pairs (older DOM structure)
+      if (screenerAnswers.length === 0) {
+        const qaPairs = screenerContainer.querySelectorAll(
+          'div[id^="answer-and-question-"]'
+        );
+        for (const pair of qaPairs) {
+          const questionEl = pair.querySelector("h4, strong, b");
+          const answerEl = questionEl?.nextElementSibling;
+          if (questionEl && answerEl) {
             screenerAnswers.push({
-              question: dts[i].textContent?.trim() || "",
-              answer: dds[i].textContent?.trim() || "",
+              question: questionEl.textContent?.trim() || "",
+              answer: answerEl.textContent?.trim() || "",
             });
           }
         }
       }
-    }
 
-    // Strategy 3: Text-based fallback — split on "?" within screener section
-    if (screenerAnswers.length === 0 && screenerContainer) {
-      const fullText = screenerContainer.textContent || "";
-      const parts = fullText.split("?");
-      for (let i = 0; i < parts.length - 1; i++) {
-        const question = parts[i].trim().split("\n").pop()?.trim() + "?";
-        const answer = parts[i + 1].trim().split("\n")[0]?.trim();
-        if (question && answer && answer.length < 200) {
-          screenerAnswers.push({ question, answer });
+      // Strategy 3: Text-based "?" splitting within the screener section
+      if (screenerAnswers.length === 0) {
+        const fullText = screenerContainer.textContent || "";
+        // Remove the heading text itself
+        const cleanText = fullText
+          .replace(/screener questions?/gi, "")
+          .trim();
+        const parts = cleanText.split("?");
+        for (let i = 0; i < parts.length - 1; i++) {
+          const question = parts[i].trim().split("\n").pop()?.trim() + "?";
+          const answer = parts[i + 1].trim().split("\n")[0]?.trim();
+          if (question && answer && answer.length < 200 && question.length > 5) {
+            screenerAnswers.push({ question, answer });
+          }
         }
       }
     }
-
-    console.log(
-      "[Village] Screener answers found:",
-      screenerAnswers.length,
-      screenerAnswers
-    );
 
     // Extract resume text
     let resumeText = "";

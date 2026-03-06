@@ -9,13 +9,9 @@ export async function lookupLinkedIn(
   state?: string,
   employer?: string
 ): Promise<SearchResult> {
-  const apiKey = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
-  const engineId = process.env.GOOGLE_CUSTOM_SEARCH_ENGINE_ID;
+  const apiKey = process.env.BRAVE_SEARCH_API_KEY;
 
-  console.log(`[LinkedIn] Env vars present: apiKey=${!!apiKey}, engineId=${!!engineId}`);
-
-  if (!apiKey || !engineId) {
-    console.log("[LinkedIn] Missing env vars, returning null");
+  if (!apiKey) {
     return { linkedinUrl: null };
   }
 
@@ -23,31 +19,30 @@ export async function lookupLinkedIn(
     ? [employer]
     : [city, state].filter(Boolean);
   const context = contextParts.join(" ");
-  const query = `"${firstName} ${lastName}" ${context} site:linkedin.com/in`;
-  console.log(`[LinkedIn] Query: ${query}`);
+  const query = `${firstName} ${lastName} ${context} site:linkedin.com/in`;
 
-  const url = new URL("https://www.googleapis.com/customsearch/v1");
-  url.searchParams.set("key", apiKey);
-  url.searchParams.set("cx", engineId);
+  const url = new URL("https://api.search.brave.com/res/v1/web/search");
   url.searchParams.set("q", query);
-  url.searchParams.set("num", "1");
+  url.searchParams.set("count", "3");
 
-  const response = await fetch(url.toString());
-  console.log(`[LinkedIn] Response status: ${response.status}`);
+  const response = await fetch(url.toString(), {
+    headers: {
+      "X-Subscription-Token": apiKey,
+      Accept: "application/json",
+    },
+  });
 
   if (!response.ok) {
-    const body = await response.text();
-    console.error(`[LinkedIn] Search failed: ${response.status} ${response.statusText} | Body: ${body.slice(0, 500)}`);
+    console.error(`[LinkedIn] Search failed: ${response.status} ${response.statusText}`);
     return { linkedinUrl: null };
   }
 
   const data = await response.json();
-  console.log(`[LinkedIn] Result count: ${data.items?.length ?? 0}, first link: ${data.items?.[0]?.link ?? "none"}`);
+  const results = data.web?.results ?? [];
 
-  if (data.items && data.items.length > 0) {
-    const link = data.items[0].link as string;
-    if (link.includes("linkedin.com/in/")) {
-      return { linkedinUrl: link };
+  for (const result of results) {
+    if (result.url?.includes("linkedin.com/in/")) {
+      return { linkedinUrl: result.url };
     }
   }
 

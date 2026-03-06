@@ -40,8 +40,6 @@ export function mapScreenerAnswers(
 
   for (const { question, answer } of qa) {
     const q = question.toLowerCase();
-    console.log(`[Screener] Q: "${question}" | A: "${answer}"`);
-    console.log(`[Screener] in-home match: ${q.includes("in-home visits") || q.includes("in home visits")}`);
     if (q.includes("in-home visits") || q.includes("in home visits")) {
       const a = answer.toLowerCase().trim();
       if (a === "yes" || a.startsWith("yes")) {
@@ -55,7 +53,6 @@ export function mapScreenerAnswers(
     }
   }
 
-  console.log(`[Screener] Result: sessionPreference="${sessionPreference}", interviewAvailability="${interviewAvailability}"`);
   return { sessionPreference, interviewAvailability };
 }
 
