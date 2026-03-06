@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { mapScreenerAnswers } from "@/lib/indeed";
 import { runStage1, runStage2 } from "@/lib/claude";
 import { validateAndNormalize } from "@/lib/validation";
+import { lookupLinkedIn } from "@/lib/linkedin";
 import { calculateLeadScore } from "@/lib/scoring";
 import { extractTextFromPdf } from "@/lib/pdf";
 import {
@@ -176,13 +177,32 @@ export async function POST(request: NextRequest) {
         record.stateRegion = state;
       }
 
-      // 10. Calculate lead score
+      // 10. LinkedIn lookup
+      if (!record.linkedinUrl && record.firstName && record.lastName) {
+        try {
+          const employer = stage1.workExperience?.[0]?.employer;
+          const result = await lookupLinkedIn(
+            record.firstName,
+            record.lastName,
+            record.city,
+            record.stateRegion,
+            employer
+          );
+          if (result.linkedinUrl) {
+            record.linkedinUrl = result.linkedinUrl;
+          }
+        } catch (err) {
+          console.warn("[Ingest] LinkedIn lookup failed:", err);
+        }
+      }
+
+      // 11. Calculate lead score
       const leadScore = calculateLeadScore(record);
       if (leadScore) {
         record.leadScore = leadScore;
       }
 
-      // 11. Update Inbox row with processed data
+      // 12. Update Inbox row with processed data
       await updateInboxItem(itemId, {
         status: "processed",
         processedRecord: record,
