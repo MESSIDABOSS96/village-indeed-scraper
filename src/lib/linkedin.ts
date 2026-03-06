@@ -6,7 +6,8 @@ export async function lookupLinkedIn(
   firstName: string,
   lastName: string,
   city?: string,
-  state?: string
+  state?: string,
+  employer?: string
 ): Promise<SearchResult> {
   const apiKey = process.env.GOOGLE_CUSTOM_SEARCH_API_KEY;
   const engineId = process.env.GOOGLE_CUSTOM_SEARCH_ENGINE_ID;
@@ -15,8 +16,11 @@ export async function lookupLinkedIn(
     return { linkedinUrl: null };
   }
 
-  const locationParts = [city, state].filter(Boolean).join(" ");
-  const query = `"${firstName} ${lastName}" ${locationParts} site:linkedin.com/in`;
+  const contextParts = employer
+    ? [employer]
+    : [city, state].filter(Boolean);
+  const context = contextParts.join(" ");
+  const query = `"${firstName} ${lastName}" ${context} site:linkedin.com/in`;
 
   const url = new URL("https://www.googleapis.com/customsearch/v1");
   url.searchParams.set("key", apiKey);

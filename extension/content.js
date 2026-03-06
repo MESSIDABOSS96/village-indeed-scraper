@@ -342,58 +342,62 @@
 
     // Extract screener questions and answers
     const screenerAnswers = [];
-    // Find "Screener questions" heading
-    const headings = document.querySelectorAll(
-      "h2, h3, h4, [role='heading']"
+
+    // Strategy 1: Use data-testid selectors (Indeed's current DOM structure)
+    const screenerContainer = document.querySelector(
+      '[data-testid="Screener questions"], [data-testid="ScreenerAnswersRemoteModule"]'
     );
-    let screenerSection = null;
-    for (const h of headings) {
-      if (
-        h.textContent?.toLowerCase().includes("screener question")
-      ) {
-        screenerSection = h;
-        break;
+    if (screenerContainer) {
+      // Expand accordion if collapsed
+      const toggleBtn = screenerContainer.querySelector(
+        'button[aria-expanded="false"]'
+      );
+      if (toggleBtn) {
+        toggleBtn.click();
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      // Find the answers module (may be the container itself or nested)
+      const answersModule =
+        screenerContainer.querySelector(
+          '[data-testid="ScreenerAnswersRemoteModule"]'
+        ) || screenerContainer;
+
+      // Each Q&A pair lives in a div[id^="answer-and-question-"]
+      const qaPairs = answersModule.querySelectorAll(
+        'div[id^="answer-and-question-"]'
+      );
+      for (const pair of qaPairs) {
+        const questionEl = pair.querySelector("h4");
+        const answerEl = questionEl
+          ? questionEl.nextElementSibling
+          : null;
+        if (questionEl && answerEl) {
+          screenerAnswers.push({
+            question: questionEl.textContent?.trim() || "",
+            answer: answerEl.textContent?.trim() || "",
+          });
+        }
       }
     }
-    if (screenerSection) {
-      // Walk siblings/parent to find Q&A pairs
-      let container =
-        screenerSection.closest("section") ||
-        screenerSection.parentElement;
-      if (container) {
-        // Look for question-answer patterns
-        // Questions are typically bold/strong, answers follow
-        const allElements = container.querySelectorAll("*");
-        let currentQuestion = "";
-        for (const el of allElements) {
-          const text = el.textContent?.trim();
-          if (!text) continue;
-          // Bold or strong elements are likely questions
-          if (
-            (el.tagName === "STRONG" ||
-              el.tagName === "B" ||
-              window.getComputedStyle(el).fontWeight >= 600) &&
-            text.length > 10 &&
-            text.includes("?")
-          ) {
-            currentQuestion = text;
-          } else if (currentQuestion && el !== screenerSection) {
-            // Check if this looks like an answer (has left border or follows question)
-            const style = window.getComputedStyle(el);
-            if (
-              style.borderLeftWidth &&
-              parseInt(style.borderLeftWidth) > 0
-            ) {
-              screenerAnswers.push({
-                question: currentQuestion,
-                answer: text,
-              });
-              currentQuestion = "";
-            }
-          }
+
+    // Strategy 2: Fallback — find screener heading and look for dt/dd pairs
+    if (screenerAnswers.length === 0) {
+      const headingsForScreener = document.querySelectorAll(
+        "h2, h3, h4, [role='heading']"
+      );
+      let screenerSection = null;
+      for (const h of headingsForScreener) {
+        if (h.textContent?.toLowerCase().includes("screener question")) {
+          screenerSection = h;
+          break;
         }
-        // Fallback: look for dt/dd or label/value pairs
-        if (screenerAnswers.length === 0) {
+      }
+      if (screenerSection) {
+        const container =
+          screenerSection.closest("section") ||
+          screenerSection.parentElement;
+        if (container) {
           const dts = container.querySelectorAll("dt, .question");
           const dds = container.querySelectorAll("dd, .answer");
           for (let i = 0; i < Math.min(dts.length, dds.length); i++) {
@@ -406,9 +410,31 @@
       }
     }
 
+    // Strategy 3: Text-based fallback — split on "?" within screener section
+    if (screenerAnswers.length === 0 && screenerContainer) {
+      const fullText = screenerContainer.textContent || "";
+      const parts = fullText.split("?");
+      for (let i = 0; i < parts.length - 1; i++) {
+        const question = parts[i].trim().split("\n").pop()?.trim() + "?";
+        const answer = parts[i + 1].trim().split("\n")[0]?.trim();
+        if (question && answer && answer.length < 200) {
+          screenerAnswers.push({ question, answer });
+        }
+      }
+    }
+
+    console.log(
+      "[Village] Screener answers found:",
+      screenerAnswers.length,
+      screenerAnswers
+    );
+
     // Extract resume text
     let resumeText = "";
     // Find "Resume" heading
+    const headings = document.querySelectorAll(
+      "h2, h3, h4, [role='heading']"
+    );
     let resumeSection = null;
     for (const h of headings) {
       if (

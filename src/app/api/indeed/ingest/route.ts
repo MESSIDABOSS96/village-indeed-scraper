@@ -4,6 +4,7 @@ import { mapScreenerAnswers } from "@/lib/indeed";
 import { runStage1, runStage2 } from "@/lib/claude";
 import { validateAndNormalize } from "@/lib/validation";
 import { calculateLeadScore } from "@/lib/scoring";
+import { lookupLinkedIn } from "@/lib/linkedin";
 import { extractTextFromPdf } from "@/lib/pdf";
 import {
   appendToInbox,
@@ -208,13 +209,37 @@ export async function POST(request: NextRequest) {
         record.stateRegion = state;
       }
 
-      // 10. Calculate lead score
+      // 10. LinkedIn lookup
+      if (!record.linkedinUrl && record.firstName && record.lastName) {
+        try {
+          // Extract employer from work experience if available
+          const employer = stage1.workExperience
+            ?.split(/\bat\b/i)[1]
+            ?.trim()
+            ?.split(/[,\n]/)[0]
+            ?.trim();
+          const { linkedinUrl } = await lookupLinkedIn(
+            record.firstName,
+            record.lastName,
+            record.city,
+            record.stateRegion,
+            employer || undefined
+          );
+          if (linkedinUrl) {
+            record.linkedinUrl = linkedinUrl;
+          }
+        } catch (err) {
+          console.warn("[Ingest] LinkedIn lookup failed:", err);
+        }
+      }
+
+      // 11. Calculate lead score
       const leadScore = calculateLeadScore(record);
       if (leadScore) {
         record.leadScore = leadScore;
       }
 
-      // 11. Update Inbox row with processed data
+      // 12. Update Inbox row with processed data
       await updateInboxItem(itemId, {
         status: "processed",
         processedRecord: record,
