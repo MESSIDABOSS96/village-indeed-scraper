@@ -4,12 +4,10 @@ import { mapScreenerAnswers } from "@/lib/indeed";
 import { runStage1, runStage2 } from "@/lib/claude";
 import { validateAndNormalize } from "@/lib/validation";
 import { calculateLeadScore } from "@/lib/scoring";
-import { lookupLinkedIn } from "@/lib/linkedin";
 import { extractTextFromPdf } from "@/lib/pdf";
 import {
   appendToInbox,
   findInboxByIndeedId,
-  findInboxByName,
   updateInboxItem,
 } from "@/lib/sheets";
 import type { InboxItem } from "@/lib/types";
@@ -84,21 +82,8 @@ export async function POST(request: NextRequest) {
     payload.indeedCandidateUrl = normalizedUrl;
 
     const existing = await findInboxByIndeedId(normalizedUrl);
-    let existingByName: InboxItem | null = null;
-    if (!existing && payload.applicantName) {
-      existingByName = await findInboxByName(payload.applicantName);
-    }
-    const duplicateOf = existing || existingByName;
-
-    if (duplicateOf) {
-      const hasNewResumeData = !!payload.resumePdfBase64;
-      const existingNeedsUpdate =
-        !duplicateOf.processedRecord || duplicateOf.status === "error";
-
-      if (!hasNewResumeData || !existingNeedsUpdate) {
-        return jsonResponse({ status: "duplicate", id: duplicateOf.id });
-      }
-      // Fall through to re-process using the existing item's ID
+    if (existing) {
+      return jsonResponse({ status: "duplicate", id: existing.id });
     }
 
     // 4. Parse location into city + state
@@ -119,27 +104,21 @@ export async function POST(request: NextRequest) {
       ? mapScreenerAnswers(payload.screenerAnswers)
       : { sessionPreference: "", interviewAvailability: "" };
 
-    // 6. Save to Inbox immediately (or update existing row for upsert)
-    const isUpsert = !!duplicateOf;
-    const itemId = duplicateOf ? duplicateOf.id : uuidv4();
+    // 6. Save to Inbox immediately
+    const itemId = uuidv4();
 
-    if (isUpsert) {
-      await updateInboxItem(itemId, { status: "processing" });
-      console.log("[Ingest] Upsert: re-processing existing candidate", itemId);
-    } else {
-      const inboxItem: InboxItem = {
-        id: itemId,
-        indeedApplicationId: payload.indeedCandidateUrl,
-        status: "processing",
-        receivedAt: payload.scrapedAt || new Date().toISOString(),
-        applicantName: payload.applicantName,
-        resumeFileName: "scraped",
-        jobTitle: payload.jobTitle || "",
-        disposition: "New",
-        interviewAvailability: screenerData.interviewAvailability || undefined,
-      };
-      await appendToInbox(inboxItem);
-    }
+    const inboxItem: InboxItem = {
+      id: itemId,
+      indeedApplicationId: payload.indeedCandidateUrl,
+      status: "processing",
+      receivedAt: payload.scrapedAt || new Date().toISOString(),
+      applicantName: payload.applicantName,
+      resumeFileName: "scraped",
+      jobTitle: payload.jobTitle || "",
+      disposition: "New",
+      interviewAvailability: screenerData.interviewAvailability || undefined,
+    };
+    await appendToInbox(inboxItem);
 
     // 7. Extract resume text: prefer PDF, fall back to DOM-scraped text
     let resumeText = payload.resumeText || "";
@@ -157,19 +136,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Prepend known metadata so AI always has name/location/job even if PDF fails
-    const metadataHeader = [
-      "--- CANDIDATE INFO ---",
-      payload.applicantName ? `Name: ${payload.applicantName}` : "",
-      payload.location ? `Location: ${payload.location}` : "",
-      payload.jobTitle ? `Job: ${payload.jobTitle}` : "",
-      "--- RESUME TEXT ---",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    const fullText = metadataHeader + "\n" + resumeText;
-
-    const truncatedText = fullText.slice(0, 49000);
+    const truncatedText = resumeText.slice(0, 49000);
     await updateInboxItem(itemId, { resumeText: truncatedText });
 
     // 8. Run AI extraction pipeline
@@ -209,37 +176,13 @@ export async function POST(request: NextRequest) {
         record.stateRegion = state;
       }
 
-      // 10. LinkedIn lookup
-      if (!record.linkedinUrl && record.firstName && record.lastName) {
-        try {
-          // Extract employer from work experience if available
-          const employer = stage1.workExperience
-            ?.split(/\bat\b/i)[1]
-            ?.trim()
-            ?.split(/[,\n]/)[0]
-            ?.trim();
-          const { linkedinUrl } = await lookupLinkedIn(
-            record.firstName,
-            record.lastName,
-            record.city,
-            record.stateRegion,
-            employer || undefined
-          );
-          if (linkedinUrl) {
-            record.linkedinUrl = linkedinUrl;
-          }
-        } catch (err) {
-          console.warn("[Ingest] LinkedIn lookup failed:", err);
-        }
-      }
-
-      // 11. Calculate lead score
+      // 10. Calculate lead score
       const leadScore = calculateLeadScore(record);
       if (leadScore) {
         record.leadScore = leadScore;
       }
 
-      // 12. Update Inbox row with processed data
+      // 11. Update Inbox row with processed data
       await updateInboxItem(itemId, {
         status: "processed",
         processedRecord: record,
@@ -249,7 +192,7 @@ export async function POST(request: NextRequest) {
       });
 
       return jsonResponse({
-        status: isUpsert ? "updated" : "processed",
+        status: "processed",
         id: itemId,
       });
     } catch (err) {

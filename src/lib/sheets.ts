@@ -177,14 +177,26 @@ export async function ensureInboxSheet(): Promise<void> {
         requests: [{ addSheet: { properties: { title: INBOX_SHEET } } }],
       },
     });
+  }
 
-    // Write header row
+  // Verify header row exists and is correct
+  const headerRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `${INBOX_SHEET}!A1:N1`,
+  });
+  const headerRow = headerRes.data.values?.[0] ?? [];
+  const expectedHeaders = INBOX_COLUMNS.map(String);
+
+  if (
+    headerRow.length !== expectedHeaders.length ||
+    !expectedHeaders.every((h, i) => headerRow[i] === h)
+  ) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: sheetId,
       range: `${INBOX_SHEET}!A1`,
       valueInputOption: "RAW",
       requestBody: {
-        values: [INBOX_COLUMNS.map(String)],
+        values: [expectedHeaders],
       },
     });
   }
@@ -235,14 +247,6 @@ export async function findInboxByIndeedId(
   const items = await getInboxItems();
   const normalizedSearch = normalizeIndeedUrl(indeedApplicationId);
   return items.find((i) => normalizeIndeedUrl(i.indeedApplicationId) === normalizedSearch) ?? null;
-}
-
-export async function findInboxByName(
-  applicantName: string
-): Promise<InboxItem | null> {
-  const items = await getInboxItems();
-  const normalized = applicantName.trim().toLowerCase();
-  return items.find((i) => i.applicantName.trim().toLowerCase() === normalized) ?? null;
 }
 
 export async function updateInboxItem(
