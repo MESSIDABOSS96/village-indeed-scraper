@@ -177,13 +177,11 @@ export async function POST(request: NextRequest) {
       // 10. LinkedIn lookup
       if (!record.linkedinUrl && record.firstName && record.lastName) {
         try {
-          const employer = stage1.workExperience?.[0]?.employer;
           const result = await lookupLinkedIn(
             record.firstName,
             record.lastName,
             record.city,
-            record.stateRegion,
-            employer
+            record.stateRegion
           );
           if (result.linkedinUrl) {
             record.linkedinUrl = result.linkedinUrl;
