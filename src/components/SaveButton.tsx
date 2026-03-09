@@ -65,7 +65,7 @@ export default function SaveButton({
             Saving...
           </span>
         ) : (
-          `Save All to Google Sheet (${recordCount})`
+          `Save All (${recordCount})`
         )}
       </button>
 

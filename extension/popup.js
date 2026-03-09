@@ -42,6 +42,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("statusText").textContent = "Syncing...";
     document.getElementById("statusDot").className = "dot syncing";
     showFeedback("syncNow", "Started!");
+    updateSyncButtons(true);
+  });
+
+  // Stop sync
+  document.getElementById("stopSync").addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "stopSync" });
+    document.getElementById("statusText").textContent = "Stopping...";
+    showFeedback("stopSync", "Stopping...");
   });
 
   // Clear history
@@ -60,7 +68,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       "lastSyncTime",
     ]);
     updateStatusDisplay(status);
+    updateSyncButtons(status.lastSyncStatus === "syncing");
   }, 2000);
+
+  // Initial button state
+  updateSyncButtons(stored.lastSyncStatus === "syncing");
 });
 
 function updateStatusDisplay(stored) {
@@ -86,6 +98,11 @@ function updateStatusDisplay(stored) {
     const d = new Date(stored.lastSyncTime);
     lastSyncTime.textContent = `Last sync: ${d.toLocaleString()}`;
   }
+}
+
+function updateSyncButtons(isSyncing) {
+  document.getElementById("syncNow").style.display = isSyncing ? "none" : "";
+  document.getElementById("stopSync").style.display = isSyncing ? "" : "none";
 }
 
 function showFeedback(buttonId, text) {

@@ -65,29 +65,67 @@ function waitForContentScript(tabId, timeoutMs = 30000) {
 
 // --- Tab helpers ---
 
-function navigateTab(tabId, url) {
-  return new Promise((resolve) => {
+function navigateTab(tabId, url, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
     const onUpdated = (id, changeInfo) => {
       if (id === tabId && changeInfo.status === "complete") {
-        chrome.tabs.onUpdated.removeListener(onUpdated);
+        cleanup();
         resolve();
       }
     };
+    const onRemoved = (id) => {
+      if (id === tabId) {
+        cleanup();
+        reject(new Error("Tab was closed during navigation"));
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      console.warn("[Village] navigateTab timed out for", url);
+      resolve(); // resolve anyway — page may be usable even if not "complete"
+    }, timeoutMs);
+    function cleanup() {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+    }
     chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
     chrome.tabs.update(tabId, { url });
   });
 }
 
-function createBackgroundTab(url) {
-  return new Promise((resolve) => {
+function createBackgroundTab(url, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
     chrome.tabs.create({ url, active: false }, (tab) => {
+      if (chrome.runtime.lastError || !tab) {
+        reject(new Error("Failed to create tab"));
+        return;
+      }
       const onUpdated = (id, changeInfo) => {
         if (id === tab.id && changeInfo.status === "complete") {
-          chrome.tabs.onUpdated.removeListener(onUpdated);
+          cleanup();
           resolve(tab);
         }
       };
+      const onRemoved = (id) => {
+        if (id === tab.id) {
+          cleanup();
+          reject(new Error("Tab was closed before loading"));
+        }
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        console.warn("[Village] createBackgroundTab timed out for", url);
+        resolve(tab); // resolve anyway — content script may still work
+      }, timeoutMs);
+      function cleanup() {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        chrome.tabs.onRemoved.removeListener(onRemoved);
+      }
       chrome.tabs.onUpdated.addListener(onUpdated);
+      chrome.tabs.onRemoved.addListener(onRemoved);
     });
   });
 }
@@ -99,6 +137,7 @@ function delay(ms) {
 // --- Sync Cycle ---
 
 let syncing = false;
+let syncAborted = false;
 
 async function runSyncCycle() {
   if (syncing) {
@@ -106,6 +145,7 @@ async function runSyncCycle() {
     return;
   }
   syncing = true;
+  syncAborted = false;
 
   const { appUrl, apiKey } = await chrome.storage.local.get([
     "appUrl",
@@ -152,6 +192,32 @@ async function runSyncCycle() {
     const { processedIds = {} } = await chrome.storage.local.get(
       "processedIds"
     );
+
+    // Sync processedIds with backend — remove entries for candidates no longer in the sheet
+    try {
+      const urlResp = await fetch(`${appUrl}/api/indeed/processed-urls`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (urlResp.ok) {
+        const { urls } = await urlResp.json();
+        const sheetUrls = new Set(urls);
+        let pruned = 0;
+        for (const key of Object.keys(processedIds)) {
+          if (!sheetUrls.has(key)) {
+            delete processedIds[key];
+            pruned++;
+          }
+        }
+        if (pruned > 0) {
+          console.log(`[Village] Pruned ${pruned} stale entries from processedIds`);
+          await chrome.storage.local.set({ processedIds });
+        }
+      }
+    } catch (err) {
+      console.warn("[Village] Failed to sync processedIds with backend:", err);
+      // Non-fatal — continue with existing processedIds
+    }
+
     const newCandidates = listData.candidates.filter((c) => {
       const entry = processedIds[normalizeIndeedUrl(c.profileUrl)];
       // Re-visit if never processed, old format (plain timestamp), or previous sync had no resume
@@ -165,6 +231,11 @@ async function runSyncCycle() {
 
     // 4. For each new candidate, navigate to profile and extract
     for (const candidate of toProcess) {
+      if (syncAborted) {
+        console.log("[Village] Sync aborted by user");
+        await updateStatus("ok", `Sync stopped by user (${newCount} processed)`);
+        break;
+      }
       try {
         await delay(NAV_DELAY_MS);
         await navigateTab(tab.id, candidate.profileUrl);
@@ -215,6 +286,7 @@ async function runSyncCycle() {
 
         // 6. POST to app's ingest endpoint
         const normalizedUrl = normalizeIndeedUrl(candidate.profileUrl);
+        console.log("[Village] Screener payload:", JSON.stringify(profileData.screenerAnswers));
         const payload = {
           indeedCandidateUrl: normalizedUrl,
           applicantName: profileData.name || candidate.name,
@@ -265,7 +337,9 @@ async function runSyncCycle() {
     }
 
     // 6. Close background tab
-    if (tab) chrome.tabs.remove(tab.id);
+    if (tab) {
+      try { chrome.tabs.remove(tab.id); } catch (_) {}
+    }
 
     // Update status
     chrome.action.setBadgeText({ text: newCount > 0 ? `${newCount}` : "" });
@@ -303,6 +377,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "syncNow") {
     runSyncCycle();
     sendResponse({ started: true });
+  }
+  if (message.action === "stopSync") {
+    if (syncing) {
+      syncAborted = true;
+      console.log("[Village] Stop sync requested by user");
+      sendResponse({ stopped: true });
+    } else {
+      sendResponse({ stopped: false });
+    }
   }
   if (message.action === "updateAlarm") {
     chrome.alarms.create("syncCandidates", {

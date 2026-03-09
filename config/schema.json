@@ -21,7 +21,7 @@
     { "key": "specialties", "label": "Specialties", "type": "multi-checkbox", "order": 17 },
     { "key": "agesServed", "label": "Ages Served", "type": "dropdown", "order": 18 },
     { "key": "careSetting", "label": "Care Setting", "type": "dropdown", "order": 19 },
-    { "key": "languagesSpoken", "label": "Languages Spoken", "type": "dropdown", "order": 20 },
+    { "key": "languagesSpoken", "label": "Languages Spoken", "type": "multi-checkbox", "order": 20 },
     { "key": "licenseType", "label": "License Type", "type": "dropdown", "order": 21 },
     { "key": "licenseNumber", "label": "License #", "type": "text", "order": 22 },
     { "key": "licenseState", "label": "License State", "type": "text", "order": 23 }

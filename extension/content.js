@@ -4,6 +4,15 @@
 (function () {
   "use strict";
 
+  // Safe wrapper — chrome.runtime can become undefined after extension reload
+  function safeSendMessage(msg) {
+    if (chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage(msg);
+    } else {
+      console.warn("[Village] Extension context invalidated, cannot send message");
+    }
+  }
+
   const url = window.location.href;
 
   // Detect login page
@@ -13,7 +22,7 @@
     document.querySelector('input[type="email"][name="__email"]') ||
     document.querySelector('form[action*="login"]')
   ) {
-    chrome.runtime.sendMessage({ type: "login_required" });
+    safeSendMessage({ type: "login_required" });
     return;
   }
 
@@ -101,7 +110,7 @@
 
     if (addCandidateHeading || addCandidateForm) {
       console.log("[Village] Detected 'Add candidate' page instead of candidate list");
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         type: "error",
         message: "Landed on 'Add candidate' page instead of candidate list. URL may be incorrect.",
       });
@@ -132,29 +141,61 @@
       if (seen.has(profileUrl)) continue;
       seen.add(profileUrl);
 
-      // Find the row container (table row or nearest repeating parent)
-      const row =
+      // Find the row container — walk up from the link until we find a
+      // container that also contains buttons (the review checkmark lives there)
+      let row =
         link.closest("tr") ||
         link.closest('[role="row"]') ||
-        link.closest("li") ||
-        link.closest("[class]")?.parentElement;
+        link.closest("li");
+
+      if (!row) {
+        // Walk up until we find an ancestor that contains buttons
+        let ancestor = link.parentElement;
+        while (ancestor && ancestor !== document.body) {
+          const btns = ancestor.querySelectorAll("button");
+          if (btns.length > 0) {
+            row = ancestor;
+            break;
+          }
+          ancestor = ancestor.parentElement;
+        }
+      }
 
       // Skip already-reviewed candidates: detect green checkmark (shortlisted)
       if (row) {
         let isShortlisted = false;
 
-        // Debug: log the first row's button HTML so we can see actual markup
-        if (candidates.length === 0) {
+        // Debug: log the first candidate's row so we can see actual markup
+        if (candidates.length === 0 && seen.size === 1) {
           const debugBtns = row.querySelectorAll("button");
+          console.log("[Village] DEBUG - Row element:", row.tagName, row.className?.slice(0, 200));
+          console.log("[Village] DEBUG - Row innerHTML (first 2000):", row.innerHTML?.slice(0, 2000));
           console.log("[Village] DEBUG - First row buttons (" + debugBtns.length + "):");
           debugBtns.forEach((btn, i) => {
             console.log("[Village] Button " + i + ":", {
-              outerHTML: btn.outerHTML.slice(0, 500),
+              outerHTML: btn.outerHTML.slice(0, 800),
               ariaPressed: btn.getAttribute("aria-pressed"),
               ariaLabel: btn.getAttribute("aria-label"),
               ariaSelected: btn.getAttribute("aria-selected"),
               dataTestId: btn.getAttribute("data-testid"),
               classes: btn.className,
+            });
+            // Log computed colors on button and its SVGs
+            const style = window.getComputedStyle(btn);
+            console.log("[Village] Button " + i + " computed:", {
+              bg: style.backgroundColor,
+              color: style.color,
+              fill: style.fill,
+            });
+            const svgs = btn.querySelectorAll("svg, svg *");
+            svgs.forEach((s, j) => {
+              const sStyle = window.getComputedStyle(s);
+              console.log("[Village] Button " + i + " svg " + j + ":", {
+                fill: s.getAttribute("fill"),
+                computedFill: sStyle.fill,
+                computedColor: sStyle.color,
+                tag: s.tagName,
+              });
             });
           });
         }
@@ -163,32 +204,36 @@
         const pressedBtns = row.querySelectorAll('button[aria-pressed="true"]');
         if (pressedBtns.length > 0) {
           isShortlisted = true;
+          console.log("[Village] Detected reviewed (aria-pressed):", link.textContent?.trim());
         }
 
-        // Method 2: Look for green SVGs (filled checkmark)
+        // Method 2: Look for green SVGs (filled checkmark) — check all fill attributes and styles
         if (!isShortlisted) {
-          const svgs = row.querySelectorAll("button svg");
-          for (const svg of svgs) {
-            const fills = svg.querySelectorAll("[fill]");
-            for (const el of fills) {
-              const fill = (el.getAttribute("fill") || "").toLowerCase();
-              if (
-                fill.includes("#22c55e") || fill.includes("#4caf50") ||
-                fill.includes("#16a34a") || fill.includes("#15803d") ||
-                fill.includes("green") || fill.includes("#2e7d32") ||
-                fill.includes("#43a047") || fill.includes("#66bb6a")
-              ) {
+          const svgs = row.querySelectorAll("button svg, button svg *");
+          for (const el of svgs) {
+            const fill = (el.getAttribute("fill") || "").toLowerCase();
+            const style = (el.getAttribute("style") || "").toLowerCase();
+            const computedFill = window.getComputedStyle(el).fill?.toLowerCase() || "";
+            const allFills = fill + " " + style + " " + computedFill;
+            // Match any greenish color
+            if (
+              /green|#22c55e|#4caf50|#16a34a|#15803d|#2e7d32|#43a047|#66bb6a|#10b981|#059669|#34d399|#6ee7b7/.test(allFills) ||
+              /rgb\(\s*(\d+),\s*(\d+),\s*(\d+)/.test(allFills)
+            ) {
+              // For rgb(), check if it's actually green
+              const rgbMatch = allFills.match(/rgb\(\s*(\d+),\s*(\d+),\s*(\d+)/);
+              if (rgbMatch) {
+                const [, r, g, b] = rgbMatch.map(Number);
+                if (g > 100 && g > r * 1.3 && g > b * 1.3) {
+                  isShortlisted = true;
+                  console.log("[Village] Detected reviewed (green SVG rgb):", link.textContent?.trim(), `rgb(${r},${g},${b})`);
+                  break;
+                }
+              } else {
                 isShortlisted = true;
+                console.log("[Village] Detected reviewed (green SVG fill):", link.textContent?.trim(), fill || computedFill);
                 break;
               }
-            }
-            if (isShortlisted) break;
-            // Also check inline style for green colors
-            const svgHTML = svg.outerHTML.toLowerCase();
-            if (/fill:\s*#(22c55e|4caf50|16a34a|15803d|2e7d32|43a047|66bb6a)/.test(svgHTML) ||
-                /fill:\s*green/.test(svgHTML)) {
-              isShortlisted = true;
-              break;
             }
           }
         }
@@ -197,39 +242,41 @@
         if (!isShortlisted) {
           const activeBtns = row.querySelectorAll(
             'button[aria-selected="true"], button[data-active="true"], button[data-selected="true"], ' +
-            'button[class*="selected"], button[class*="active"], button[class*="filled"], button[class*="Active"]'
+            'button[class*="selected"], button[class*="active"], button[class*="filled"], button[class*="Active"], ' +
+            'button[class*="Selected"], button[class*="Filled"], button[class*="checked"], button[class*="Checked"]'
           );
           if (activeBtns.length > 0) {
             isShortlisted = true;
+            console.log("[Village] Detected reviewed (active class/attr):", link.textContent?.trim());
           }
         }
 
-        // Method 4: Check computed styles for green background/color on buttons
+        // Method 4: Check computed styles for green background/color on buttons and their children
         if (!isShortlisted) {
           const btns = row.querySelectorAll("button");
           for (const btn of btns) {
-            const style = window.getComputedStyle(btn);
-            const bgColor = style.backgroundColor;
-            const color = style.color;
-            // Check for greenish RGB values
-            const greenRgbMatch = (bgColor + " " + color).match(
-              /rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\)/g
-            );
-            if (greenRgbMatch) {
-              for (const match of greenRgbMatch) {
+            // Check button itself and all descendants for green colors
+            const els = [btn, ...btn.querySelectorAll("*")];
+            for (const el of els) {
+              const style = window.getComputedStyle(el);
+              const colors = [style.backgroundColor, style.color, style.fill].join(" ");
+              const rgbMatches = colors.match(/rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\)/g) || [];
+              for (const match of rgbMatches) {
                 const [, r, g, b] = match.match(/(\d+)/g).map(Number);
-                if (g > 120 && g > r * 1.5 && g > b * 1.5) {
+                if (g > 100 && g > r * 1.3 && g > b * 1.3) {
                   isShortlisted = true;
+                  console.log("[Village] Detected reviewed (computed green):", link.textContent?.trim(), match);
                   break;
                 }
               }
+              if (isShortlisted) break;
             }
             if (isShortlisted) break;
           }
         }
 
         if (isShortlisted) {
-          console.log("[Village] Skipping shortlisted candidate:", link.textContent?.trim());
+          console.log("[Village] Skipping reviewed candidate:", link.textContent?.trim());
           continue;
         }
       }
@@ -275,7 +322,7 @@
       candidates.length,
       "candidates"
     );
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "candidate_list",
       candidates,
     });
@@ -343,7 +390,19 @@
     // Extract screener questions and answers
     const screenerAnswers = [];
 
-    // Find the screener section by heading text or data-testid
+    // --- Find screener heading ---
+    let screenerHeading = null;
+    const allHeadings = document.querySelectorAll(
+      "h2, h3, h4, h5, [role='heading'], button, [aria-expanded]"
+    );
+    for (const h of allHeadings) {
+      if (h.textContent?.toLowerCase().includes("screener question")) {
+        screenerHeading = h;
+        break;
+      }
+    }
+
+    // --- Find screener container ---
     let screenerContainer = null;
 
     // Try data-testid first
@@ -351,26 +410,7 @@
       '[data-testid="Screener questions"], [data-testid="ScreenerAnswersRemoteModule"]'
     );
 
-    // Try finding heading containing "Screener questions"
-    if (!screenerContainer) {
-      const allHeadings = document.querySelectorAll(
-        "h2, h3, h4, h5, [role='heading'], button, [aria-expanded]"
-      );
-      for (const h of allHeadings) {
-        if (h.textContent?.toLowerCase().includes("screener question")) {
-          // Walk up to find the expandable section container
-          screenerContainer =
-            h.closest("section") ||
-            h.closest('[class*="card"]') ||
-            h.closest('[class*="panel"]') ||
-            h.parentElement?.parentElement ||
-            h.parentElement;
-          break;
-        }
-      }
-    }
-
-    // Try any data-testid containing "screener" (case-insensitive)
+    // Try any data-testid containing "screener"
     if (!screenerContainer) {
       const allTestIdEls = document.querySelectorAll("[data-testid]");
       for (const el of allTestIdEls) {
@@ -381,90 +421,209 @@
       }
     }
 
-    if (screenerContainer) {
-      // Expand accordion if collapsed
-      const toggleBtn = screenerContainer.querySelector(
+    // Walk up from heading to find a container that encompasses Q&A content
+    if (!screenerContainer && screenerHeading) {
+      screenerContainer =
+        screenerHeading.closest("section") ||
+        screenerHeading.closest('[class*="card"]') ||
+        screenerHeading.closest('[class*="panel"]');
+
+      // If no semantic container, walk up ancestors until we find one
+      // that contains bold/strong descendants (the actual questions)
+      if (!screenerContainer) {
+        let ancestor = screenerHeading.parentElement;
+        while (ancestor && ancestor !== document.body) {
+          const bolds = ancestor.querySelectorAll("strong, b");
+          // Must contain bold elements beyond just the heading itself
+          const hasBoldQuestions = Array.from(bolds).some(
+            (b) => !b.textContent?.toLowerCase().includes("screener question")
+          );
+          if (hasBoldQuestions) {
+            screenerContainer = ancestor;
+            break;
+          }
+          ancestor = ancestor.parentElement;
+        }
+      }
+    }
+
+    // --- "Between headings" strategy: collect nodes between Screener and Resume headings ---
+    let betweenNodes = [];
+    if (screenerHeading) {
+      // Find the Resume heading that follows
+      const pageHeadings = document.querySelectorAll(
+        "h2, h3, h4, h5, [role='heading']"
+      );
+      let foundScreener = false;
+      let resumeHeading = null;
+      for (const h of pageHeadings) {
+        if (h === screenerHeading || h.contains(screenerHeading) || screenerHeading.contains(h)) {
+          foundScreener = true;
+          continue;
+        }
+        if (foundScreener && h.textContent?.trim().toLowerCase().startsWith("resume")) {
+          resumeHeading = h;
+          break;
+        }
+      }
+
+      // Walk DOM siblings/ancestors to collect elements between the two headings
+      if (foundScreener) {
+        // Find common ancestor
+        const commonParent = screenerHeading.parentElement?.parentElement?.parentElement || document.body;
+        const allEls = commonParent.querySelectorAll("*");
+        let inRange = false;
+        for (const el of allEls) {
+          if (el === screenerHeading || el.contains(screenerHeading) || screenerHeading.contains(el)) {
+            inRange = true;
+            continue;
+          }
+          if (resumeHeading && (el === resumeHeading || el.contains(resumeHeading) || resumeHeading.contains(el))) {
+            break;
+          }
+          if (inRange) {
+            betweenNodes.push(el);
+          }
+        }
+      }
+    }
+
+    console.log("[Village] Screener debug:", {
+      headingFound: !!screenerHeading,
+      containerFound: !!screenerContainer,
+      betweenNodesCount: betweenNodes.length,
+      containerHTML: screenerContainer?.innerHTML?.substring(0, 500),
+    });
+
+    // Expand accordion if collapsed (try both container and heading contexts)
+    const expandTargets = [screenerContainer, screenerHeading?.parentElement, screenerHeading?.parentElement?.parentElement].filter(Boolean);
+    for (const target of expandTargets) {
+      const toggleBtn = target.querySelector?.(
         'button[aria-expanded="false"]'
       );
       if (toggleBtn) {
         toggleBtn.click();
         await new Promise((r) => setTimeout(r, 500));
+        break;
+      }
+    }
+
+    // Determine the search scope: prefer container, fallback to betweenNodes wrapper
+    const searchScope = screenerContainer || (betweenNodes.length > 0 ? (() => {
+      // Create a virtual scope by using the common parent
+      const wrapper = document.createElement("div");
+      betweenNodes.forEach((n) => {
+        if (n.parentElement) wrapper.appendChild(n.cloneNode(true));
+      });
+      return wrapper;
+    })() : null);
+
+    if (searchScope) {
+      // Strategy 1: div[id^="answer-and-question-"] pairs (matches current Indeed DOM)
+      const qaPairs = searchScope.querySelectorAll(
+        'div[id^="answer-and-question-"]'
+      );
+      for (const pair of qaPairs) {
+        const questionEl = pair.querySelector("h4, strong, b");
+        if (questionEl) {
+          const answerText = questionEl.nextElementSibling?.textContent?.trim() || "";
+          const qText = questionEl.textContent?.trim() || "";
+          if (qText && answerText) {
+            screenerAnswers.push({ question: qText, answer: answerText });
+          }
+        }
       }
 
-      // Strategy 1: Bold/strong text (questions) followed by blockquote or bordered elements (answers)
-      const boldEls = screenerContainer.querySelectorAll(
+      // Strategy 2: Bold/strong text (questions) with multi-level sibling traversal for answers
+      const boldEls = searchScope.querySelectorAll(
         "strong, b, h4, h3, [style*='font-weight']"
       );
-      for (const boldEl of boldEls) {
-        const qText = boldEl.textContent?.trim();
-        if (!qText || qText.toLowerCase().includes("screener question")) continue;
-
-        // Look for the answer: next sibling blockquote, bordered div, or next text block
-        let answerText = "";
-        let sibling = boldEl.nextElementSibling;
-        // If bold is inside a parent, check parent's next sibling too
-        if (!sibling && boldEl.parentElement) {
-          sibling = boldEl.parentElement.nextElementSibling;
+      const boldArray = Array.from(boldEls).filter(
+        (b) => {
+          const t = b.textContent?.trim().toLowerCase() || "";
+          return t && !t.includes("screener question") && t.length > 10;
         }
+      );
 
-        if (sibling) {
-          // Check for blockquote or element with left border (blue bar style)
-          const blockquote = sibling.matches?.("blockquote")
-            ? sibling
-            : sibling.querySelector?.("blockquote");
-          if (blockquote) {
-            answerText = blockquote.textContent?.trim() || "";
-          } else {
-            const style = window.getComputedStyle(sibling);
-            if (
-              style.borderLeftWidth &&
-              parseInt(style.borderLeftWidth) > 0
-            ) {
-              answerText = sibling.textContent?.trim() || "";
+      if (screenerAnswers.length === 0) {
+        for (const boldEl of boldArray) {
+          const qText = boldEl.textContent?.trim();
+
+          // Walk up multiple levels to find a sibling (answer block)
+          let answerText = "";
+          let sibling = null;
+          let ancestor = boldEl;
+          while (!sibling && ancestor && ancestor !== searchScope) {
+            sibling = ancestor.nextElementSibling;
+            if (!sibling) {
+              ancestor = ancestor.parentElement;
+            }
+          }
+
+          if (sibling) {
+            // Check for blockquote or inline-styled border-left (answer indicator)
+            const blockquote = sibling.matches?.("blockquote")
+              ? sibling
+              : sibling.querySelector?.("blockquote");
+            if (blockquote) {
+              answerText = blockquote.textContent?.trim() || "";
             } else {
-              // Check children for bordered elements
-              const borderedChild = sibling.querySelector(
-                "blockquote, [style*='border-left']"
-              );
-              if (borderedChild) {
-                answerText = borderedChild.textContent?.trim() || "";
+              // Check inline style for border-left (more reliable than getComputedStyle in background tabs)
+              const hasBorderStyle = (el) =>
+                el?.getAttribute?.("style")?.includes("border-left") ||
+                el?.getAttribute?.("class")?.includes("border");
+              const borderedEl = hasBorderStyle(sibling)
+                ? sibling
+                : sibling.querySelector?.("[style*='border-left'], [class*='border']");
+              if (borderedEl) {
+                answerText = borderedEl.textContent?.trim() || "";
               } else {
                 answerText = sibling.textContent?.trim() || "";
               }
             }
           }
-        }
 
-        if (qText && answerText && answerText !== qText) {
-          screenerAnswers.push({ question: qText, answer: answerText });
-        }
-      }
-
-      // Strategy 2: div[id^="answer-and-question-"] pairs (older DOM structure)
-      if (screenerAnswers.length === 0) {
-        const qaPairs = screenerContainer.querySelectorAll(
-          'div[id^="answer-and-question-"]'
-        );
-        for (const pair of qaPairs) {
-          const questionEl = pair.querySelector("h4, strong, b");
-          const answerEl = questionEl?.nextElementSibling;
-          if (questionEl && answerEl) {
-            screenerAnswers.push({
-              question: questionEl.textContent?.trim() || "",
-              answer: answerEl.textContent?.trim() || "",
-            });
+          if (qText && answerText && answerText !== qText) {
+            screenerAnswers.push({ question: qText, answer: answerText });
           }
         }
       }
 
-      // Strategy 3: Text-based "?" splitting within the screener section
+      // Strategy 3: Use bold elements as anchors, grab text between consecutive bolds
+      if (screenerAnswers.length === 0 && boldArray.length > 0) {
+        const fullText = searchScope.textContent || "";
+        for (let i = 0; i < boldArray.length; i++) {
+          const qText = boldArray[i].textContent?.trim();
+          if (!qText) continue;
+
+          const qIdx = fullText.indexOf(qText);
+          if (qIdx === -1) continue;
+
+          const afterQ = qIdx + qText.length;
+          // Answer ends at the next bold text or end of content
+          let endIdx = fullText.length;
+          if (i + 1 < boldArray.length) {
+            const nextQ = boldArray[i + 1].textContent?.trim();
+            if (nextQ) {
+              const nextIdx = fullText.indexOf(nextQ, afterQ);
+              if (nextIdx !== -1) endIdx = nextIdx;
+            }
+          }
+
+          const answerText = fullText.substring(afterQ, endIdx).trim();
+          if (qText && answerText && answerText.length < 500) {
+            screenerAnswers.push({ question: qText, answer: answerText });
+          }
+        }
+      }
+
+      // Strategy 4: Plain text splitting (handles "?" and "." terminated questions)
       if (screenerAnswers.length === 0) {
-        const fullText = screenerContainer.textContent || "";
-        // Remove the heading text itself
-        const cleanText = fullText
+        const fullText = (searchScope.textContent || "")
           .replace(/screener questions?/gi, "")
           .trim();
-        const parts = cleanText.split("?");
+        // Split on "?" as before
+        const parts = fullText.split("?");
         for (let i = 0; i < parts.length - 1; i++) {
           const question = parts[i].trim().split("\n").pop()?.trim() + "?";
           const answer = parts[i + 1].trim().split("\n")[0]?.trim();
@@ -474,6 +633,8 @@
         }
       }
     }
+
+    console.log("[Village] Screener results:", JSON.stringify(screenerAnswers));
 
     // Extract resume text
     let resumeText = "";
@@ -684,7 +845,7 @@
         downloadBtn.click();
 
         // Also try sending the click result back to background for download interception
-        chrome.runtime.sendMessage({ type: "watch_downloads", tabId: true });
+        safeSendMessage({ type: "watch_downloads", tabId: true });
       });
     }
 
@@ -836,7 +997,7 @@
       resumePdfBase64Length: resumePdfBase64.length,
     });
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "candidate_profile",
       name,
       location,

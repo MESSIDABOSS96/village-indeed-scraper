@@ -225,28 +225,53 @@ export function useResumeProcessor() {
       }
 
       try {
-        const res = await fetch("/api/sheets/append", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ records: recordsToSave }),
-        });
-        const data = await res.json();
+        // Save to Sheets and HubSpot in parallel
+        const [sheetsRes, hubspotRes] = await Promise.allSettled([
+          fetch("/api/sheets/append", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ records: recordsToSave }),
+          }).then((r) => r.json()),
+          fetch("/api/hubspot/push", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ records: recordsToSave }),
+          }).then((r) => r.json()),
+        ]);
 
-        if (data.success) {
-          setSaveResult({
-            success: true,
-            message: `Saved ${data.updatedRows} row(s) to Google Sheets`,
-          });
+        const messages: string[] = [];
+        let anySuccess = false;
+
+        // Handle Sheets result
+        if (sheetsRes.status === "fulfilled" && sheetsRes.value.success) {
+          messages.push(`Saved ${sheetsRes.value.updatedRows} row(s) to Sheets`);
+          anySuccess = true;
+        } else if (sheetsRes.status === "fulfilled") {
+          messages.push(`Sheets: ${sheetsRes.value.error || "failed"}`);
         } else {
-          setSaveResult({
-            success: false,
-            message: data.error || "Failed to save",
-          });
+          messages.push("Sheets: network error");
         }
+
+        // Handle HubSpot result
+        if (hubspotRes.status === "fulfilled") {
+          if (hubspotRes.value.message) {
+            messages.push(hubspotRes.value.message);
+            if (hubspotRes.value.updated > 0 || hubspotRes.value.created > 0) {
+              anySuccess = true;
+            }
+          }
+        } else {
+          messages.push("HubSpot: network error");
+        }
+
+        setSaveResult({
+          success: anySuccess,
+          message: messages.join(" · "),
+        });
       } catch {
         setSaveResult({
           success: false,
-          message: "Network error saving to Google Sheets",
+          message: "Network error saving",
         });
       } finally {
         setSaving(false);
