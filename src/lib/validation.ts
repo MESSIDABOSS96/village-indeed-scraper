@@ -133,6 +133,9 @@ export function validateAndNormalize(
     licenseType: stage2.licenseType || "",
     licenseNumber: stage2.licenseNumber || "",
     licenseState: stage2.licenseState || "",
+    contactType: "",
+    hdyhauSource: "",
+    hdyhauSourceDetail: "",
     sessionPreference: "",
     yearsOutOfSchool: stage1?.yearsOutOfSchool ?? "",
   };

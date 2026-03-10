@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
       success: true,
       updatedRange: result.updatedRange,
       updatedRows: result.updatedRows,
+      skipped: result.skipped,
     });
   } catch (err) {
     return NextResponse.json(

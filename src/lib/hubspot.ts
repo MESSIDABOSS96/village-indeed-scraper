@@ -30,6 +30,13 @@ const SIGN_UP_SOURCE_MAP: Record<string, string> = {
   "Job Posting": "Job Posting - Indeed",
 };
 
+const CONTACT_TYPE_MAP: Record<string, string> = {
+  "Caregiver": "Caregiver",
+  "Provider - Independent": "Provider",
+  "Provider - Business": "Provider - Business",
+  "Partner": "Partner",
+};
+
 const CARE_SETTING_MAP: Record<string, string> = {
   "In-Community (School, Park, Other Location)": "School",
 };
@@ -93,6 +100,9 @@ function transformValue(
     }
     case "sign_up_source": {
       return SIGN_UP_SOURCE_MAP[value] ?? value;
+    }
+    case "contact_type": {
+      return CONTACT_TYPE_MAP[value] ?? null;
     }
     case "care_setting": {
       return CARE_SETTING_MAP[value] ?? value;
@@ -194,6 +204,9 @@ async function mapToHubSpotProperties(
     ["agesServed", "ages_served"],
     ["careSetting", "care_setting"],
     ["languagesSpoken", "languages_spoken"],
+    ["contactType", "contact_type"],
+    ["hdyhauSource", "hdyhau_source"],
+    ["hdyhauSourceDetail", "hdyhau_source_detail"],
     ["licenseType", "license_type"],
     ["licenseNumber", "license__"],
     ["licenseState", "license_state"],

@@ -187,7 +187,11 @@ export function useIndeedInbox(active: boolean = false) {
 
         // Handle Sheets result
         if (sheetsRes.status === "fulfilled" && sheetsRes.value.success) {
-          messages.push(`Saved ${sheetsRes.value.updatedRows} row(s) to Sheets`);
+          const skipped = sheetsRes.value.skipped ?? 0;
+          const msg = skipped > 0
+            ? `Saved ${sheetsRes.value.updatedRows} row(s) to Sheets (${skipped} duplicate(s) skipped)`
+            : `Saved ${sheetsRes.value.updatedRows} row(s) to Sheets`;
+          messages.push(msg);
           anySuccess = true;
         } else if (sheetsRes.status === "fulfilled") {
           messages.push(`Sheets: ${sheetsRes.value.error || "failed"}`);

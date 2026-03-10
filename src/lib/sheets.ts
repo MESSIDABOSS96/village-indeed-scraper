@@ -35,7 +35,7 @@ const LABEL_TO_KEY = new Map<string, FieldKey>(
 
 export async function appendToSheet(
   records: ResumeRecord[]
-): Promise<{ updatedRange: string; updatedRows: number }> {
+): Promise<{ updatedRange: string; updatedRows: number; skipped: number }> {
   const sheetId = process.env.GOOGLE_SHEET_ID;
   const sheetName = (process.env.GOOGLE_SHEET_RANGE || "Sheet1!A:W").split("!")[0];
 
@@ -63,8 +63,39 @@ export async function appendToSheet(
     LABEL_TO_KEY.get(header.trim()) ?? null
   );
 
+  // Deduplicate by email: read existing data rows and collect emails
+  const emailColIndex = sheetHeaders.findIndex(
+    (h) => h.trim().toLowerCase() === "email"
+  );
+
+  let existingEmails = new Set<string>();
+  if (emailColIndex !== -1) {
+    const colLetter = String.fromCharCode(65 + emailColIndex);
+    const dataRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `${sheetName}!${colLetter}2:${colLetter}`,
+    });
+    const emailRows = dataRes.data.values ?? [];
+    existingEmails = new Set(
+      emailRows
+        .map((r) => (r[0] ?? "").toString().trim().toLowerCase())
+        .filter(Boolean)
+    );
+  }
+
+  // Filter out records whose email already exists in the sheet
+  const newRecords = records.filter((r) => {
+    const email = (r.email ?? "").trim().toLowerCase();
+    return !email || !existingEmails.has(email);
+  });
+  const skipped = records.length - newRecords.length;
+
+  if (newRecords.length === 0) {
+    return { updatedRange: "", updatedRows: 0, skipped };
+  }
+
   // Build rows aligned to the sheet's column order
-  const rows = records.map((record) => {
+  const rows = newRecords.map((record) => {
     const row = new Array(colCount).fill("");
     for (let i = 0; i < colCount; i++) {
       const key = indexToKey[i];
@@ -90,6 +121,7 @@ export async function appendToSheet(
   return {
     updatedRange: response.data.updates?.updatedRange ?? "",
     updatedRows: response.data.updates?.updatedRows ?? 0,
+    skipped,
   };
 }
 

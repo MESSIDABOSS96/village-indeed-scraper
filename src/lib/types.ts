@@ -23,6 +23,9 @@ export interface ResumeRecord {
   licenseType: string;
   licenseNumber: string;
   licenseState: string;
+  contactType: string;
+  hdyhauSource: string;
+  hdyhauSourceDetail: string;
   sessionPreference: string;
   yearsOutOfSchool: string;
 }
