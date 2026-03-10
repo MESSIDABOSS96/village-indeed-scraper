@@ -147,6 +147,9 @@ export function validateAndNormalize(
   record.lifecycleStage = CONSTANTS.lifecycleStage;
   record.signUpSource = CONSTANTS.signUpSource;
   record.signUpSource2 = CONSTANTS.signUpSource2;
+  record.contactType = CONSTANTS.contactType;
+  record.hdyhauSource = CONSTANTS.hdyhauSource;
+  record.hdyhauSourceDetail = CONSTANTS.hdyhauSourceDetail;
 
   // 2. State normalization
   const stateResult = normalizeState(record.stateRegion);
