@@ -210,6 +210,7 @@ async function mapToHubSpotProperties(
     ["licenseType", "license_type"],
     ["licenseNumber", "license__"],
     ["licenseState", "license_state"],
+    ["yearsOutOfSchool", "years_out_of_school"],
   ];
 
   for (const [recordKey, hubspotKey] of mapping) {
