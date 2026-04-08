@@ -10,6 +10,27 @@ import type {
 } from "@/lib/types";
 import { calculateLeadScore } from "@/lib/scoring";
 
+const EXTRACT_CONCURRENCY = 3;
+
+async function processWithConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+  async function worker() {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  );
+  return results;
+}
+
 type Phase = "upload" | "processing" | "review";
 
 export function useResumeProcessor() {
@@ -62,7 +83,7 @@ export function useResumeProcessor() {
     });
     setFiles(withText);
 
-    // Step 2: Extract via Claude (only files that parsed successfully)
+    // Step 2: Extract via Claude — per-file with concurrency control
     const textsToExtract = withText
       .filter((f) => f.step === "ai-stage-1" && f.rawText)
       .map((f) => ({ fileName: f.fileName, text: f.rawText! }));
@@ -72,61 +93,82 @@ export function useResumeProcessor() {
       return;
     }
 
-    // Update to show AI processing
-    setFiles((prev) =>
-      prev.map((f) =>
-        f.step === "ai-stage-1" ? { ...f, step: "ai-stage-2" as const } : f
-      )
+    const extractResults = await processWithConcurrency(
+      textsToExtract,
+      async ({ fileName, text }): Promise<ExtractResult> => {
+        // Mark this file as ai-stage-2
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.fileName === fileName && f.step === "ai-stage-1"
+              ? { ...f, step: "ai-stage-2" as const }
+              : f
+          )
+        );
+
+        try {
+          const extractRes = await fetch("/api/extract", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texts: [{ fileName, text }] }),
+          });
+
+          if (!extractRes.ok) {
+            throw new Error(`Extract API returned ${extractRes.status}`);
+          }
+
+          const extractData = await extractRes.json();
+          const result: ExtractResult = extractData.results[0];
+
+          // Update this file immediately on completion
+          setFiles((prev) =>
+            prev.map((f) => {
+              if (f.fileName !== fileName || f.step !== "ai-stage-2") return f;
+              if (result?.status === "error") {
+                return { ...f, step: "error" as const, error: result.error };
+              }
+              return {
+                ...f,
+                step: "linkedin-lookup" as const,
+                record: result.record,
+                issues: result.issues,
+                confidenceNotes: result.confidenceNotes,
+              };
+            })
+          );
+
+          return result;
+        } catch (err) {
+          const errorMsg =
+            err instanceof Error ? err.message : "AI extraction failed";
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.fileName === fileName && f.step === "ai-stage-2"
+                ? { ...f, step: "error" as const, error: errorMsg }
+                : f
+            )
+          );
+          return {
+            record: {} as ExtractResult["record"],
+            issues: [],
+            confidenceNotes: {},
+            rawText: text,
+            status: "error" as const,
+            error: errorMsg,
+          };
+        }
+      },
+      EXTRACT_CONCURRENCY
     );
 
-    let extractResults: ExtractResult[];
-    try {
-      const extractRes = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texts: textsToExtract }),
-      });
-      const extractData = await extractRes.json();
-      extractResults = extractData.results;
-    } catch {
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.step === "ai-stage-2"
-            ? { ...f, step: "error" as const, error: "AI extraction failed" }
-            : f
-        )
-      );
-      setPhase("review");
-      return;
-    }
-
-    // Map extract results back to files
-    let extractIdx = 0;
-    const afterExtract = withText.map((f) => {
-      if (f.step !== "ai-stage-1") return f; // errored files stay as-is
-      const er = extractResults[extractIdx++];
-      if (er?.status === "error") {
-        return { ...f, step: "error" as const, error: er.error };
-      }
-      return {
-        ...f,
-        step: "linkedin-lookup" as const,
-        record: er.record,
-        issues: er.issues,
-        confidenceNotes: er.confidenceNotes,
-      };
-    });
-    setFiles(afterExtract);
-
     // Step 3: LinkedIn lookup for records missing LinkedIn URL
-    const lookupsNeeded = afterExtract
-      .filter((f) => f.record && !f.record.linkedinUrl)
-      .map((f) => ({
-        id: f.record!.id,
-        firstName: f.record!.firstName,
-        lastName: f.record!.lastName,
-        city: f.record!.city || undefined,
-        state: f.record!.stateRegion || undefined,
+    const lookupsNeeded = extractResults
+      .filter((r) => r.status === "success" && r.record && !r.record.linkedinUrl)
+      .map((r) => ({
+        id: r.record.id,
+        firstName: r.record.firstName,
+        lastName: r.record.lastName,
+        city: r.record.city || undefined,
+        state: r.record.stateRegion || undefined,
       }));
 
     if (lookupsNeeded.length > 0) {
