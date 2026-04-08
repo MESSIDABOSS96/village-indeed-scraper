@@ -18,7 +18,7 @@ export default function UploadZone({ onProcess }: UploadZoneProps) {
     setFiles((prev) => {
       const existing = new Set(prev.map((f) => f.name));
       const unique = pdfs.filter((f) => !existing.has(f.name));
-      return [...prev, ...unique].slice(0, 10);
+      return [...prev, ...unique].slice(0, 20);
     });
   }, []);
 
@@ -89,7 +89,7 @@ export default function UploadZone({ onProcess }: UploadZoneProps) {
           drag and drop
         </p>
         <p className="mt-1 text-xs text-gray-500">
-          PDF files only (max 10 files, 10MB each)
+          PDF files only (max 20 files, 10MB each)
         </p>
         <input
           ref={inputRef}

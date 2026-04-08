@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { lookupLinkedIn } from "@/lib/linkedin";
 import type { LinkedInLookup } from "@/lib/types";
 
+export const maxDuration = 120;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

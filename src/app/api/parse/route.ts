@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { extractTextFromPdf } from "@/lib/pdf";
 import type { ParseResult } from "@/lib/types";
 
-const MAX_FILES = 10;
+export const maxDuration = 120;
+
+const MAX_FILES = 20;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 export async function POST(request: NextRequest) {
