@@ -10,7 +10,7 @@ import type {
 } from "@/lib/types";
 import { calculateLeadScore } from "@/lib/scoring";
 
-const EXTRACT_CONCURRENCY = 3;
+const EXTRACT_CONCURRENCY = 2;
 
 async function processWithConcurrency<T, R>(
   items: T[],

@@ -3,7 +3,7 @@ import { runStage1, runStage2 } from "@/lib/claude";
 import { validateAndNormalize } from "@/lib/validation";
 import type { ExtractResult } from "@/lib/types";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {

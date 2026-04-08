@@ -2,7 +2,22 @@ import Anthropic from "@anthropic-ai/sdk";
 import { buildStage1Prompt, buildStage2Prompt } from "./prompts";
 import type { Stage1Result, Stage2Result } from "./types";
 
-const anthropic = new Anthropic();
+const anthropic = new Anthropic({ maxRetries: 4 });
+
+const RETRY_DELAYS = [15_000, 30_000, 60_000];
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const isRateLimit =
+        err instanceof Error && "status" in err && (err as { status: number }).status === 429;
+      if (!isRateLimit || attempt >= RETRY_DELAYS.length) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+    }
+  }
+}
 
 function extractJson(text: string): string {
   // Try to find JSON in code blocks first
@@ -18,13 +33,15 @@ function extractJson(text: string): string {
 }
 
 export async function runStage1(resumeText: string): Promise<Stage1Result> {
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    messages: [
-      { role: "user", content: buildStage1Prompt(resumeText) },
-    ],
-  });
+  const response = await withRetry(() =>
+    anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2048,
+      messages: [
+        { role: "user", content: buildStage1Prompt(resumeText) },
+      ],
+    })
+  );
 
   const content = response.content[0];
   if (content.type !== "text") {
@@ -54,13 +71,15 @@ export async function runStage1(resumeText: string): Promise<Stage1Result> {
 }
 
 export async function runStage2(stage1: Stage1Result): Promise<Stage2Result> {
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 2048,
-    messages: [
-      { role: "user", content: buildStage2Prompt(JSON.stringify(stage1, null, 2)) },
-    ],
-  });
+  const response = await withRetry(() =>
+    anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2048,
+      messages: [
+        { role: "user", content: buildStage2Prompt(JSON.stringify(stage1, null, 2)) },
+      ],
+    })
+  );
 
   const content = response.content[0];
   if (content.type !== "text") {
