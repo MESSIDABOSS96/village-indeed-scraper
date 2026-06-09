@@ -199,6 +199,7 @@ async function mapToHubSpotProperties(
     ["city", "city"],
     ["stateRegion", "state"],
     ["postalCode", "zip"],
+    ["serviceCities", "service_cities"],
     ["segment", "segment"],
     ["specialties", "specialties"],
     ["agesServed", "ages_served"],

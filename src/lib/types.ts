@@ -15,6 +15,7 @@ export interface ResumeRecord {
   city: string;
   stateRegion: string;
   postalCode: string;
+  serviceCities: string;
   segment: string;
   specialties: string;
   agesServed: string;
@@ -65,6 +66,16 @@ export interface ProcessingFile {
   confidenceNotes?: ConfidenceMap;
   rawText?: string;
   error?: string;
+  // Screening-questions screenshot upload (manual, per-row)
+  screeningFileName?: string;
+  screeningStep?: "processing" | "done" | "error";
+  screeningError?: string;
+}
+
+export interface ScreeningExtractResult {
+  serviceCities: string | null;
+  postalCode: string | null;
+  confidence: ConfidenceMap;
 }
 
 export interface Stage1Result {

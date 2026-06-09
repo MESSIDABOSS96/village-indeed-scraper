@@ -5,8 +5,10 @@ import type {
   ProcessingFile,
   ResumeRecord,
   FieldKey,
+  FieldIssue,
   ParseResult,
   ExtractResult,
+  ScreeningExtractResult,
 } from "@/lib/types";
 import { calculateLeadScore } from "@/lib/scoring";
 
@@ -251,6 +253,111 @@ export function useResumeProcessor() {
     []
   );
 
+  const processScreenshot = useCallback(
+    async (recordId: string, file: File) => {
+      // Mark the row as processing
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.record?.id === recordId
+            ? {
+                ...f,
+                screeningStep: "processing" as const,
+                screeningFileName: file.name,
+                screeningError: undefined,
+              }
+            : f
+        )
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/screening", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || `Screening API returned ${res.status}`);
+        }
+        const result = data as ScreeningExtractResult;
+
+        setFiles((prev) =>
+          prev.map((f) => {
+            if (f.record?.id !== recordId) return f;
+
+            const updated: ResumeRecord = { ...f.record };
+            const conf = result.confidence ?? {};
+
+            // Service Cities — populated from the screenshot
+            updated.serviceCities = result.serviceCities ?? "";
+
+            // Postal code — screenshot overrides the résumé value only when present
+            if (result.postalCode) {
+              updated.postalCode = result.postalCode;
+            }
+
+            // Recompute lead score (postalCode/serviceCities may affect SoCal scoring)
+            const autoScore = calculateLeadScore(updated);
+            if (autoScore) updated.leadScore = autoScore;
+
+            // Rebuild issues: drop any prior flags on these two fields, add fresh ones
+            const issues: FieldIssue[] = (f.issues ?? []).filter(
+              (i) => i.field !== "serviceCities" && i.field !== "postalCode"
+            );
+
+            if (!updated.serviceCities) {
+              issues.push({
+                field: "serviceCities",
+                severity: "warning",
+                message: "Couldn't read service cities from screenshot — enter manually",
+              });
+            } else if (conf.serviceCities === "low") {
+              issues.push({
+                field: "serviceCities",
+                severity: "warning",
+                message: "Service cities — low confidence, please verify",
+              });
+            } else if (conf.serviceCities === "medium") {
+              issues.push({
+                field: "serviceCities",
+                severity: "info",
+                message: "Service cities — medium confidence, please verify",
+              });
+            }
+
+            if (!result.postalCode) {
+              issues.push({
+                field: "postalCode",
+                severity: "warning",
+                message:
+                  "Postal code not in screening yet — value (if any) is from résumé; verify",
+              });
+            }
+
+            return {
+              ...f,
+              record: updated,
+              issues,
+              screeningStep: "done" as const,
+            };
+          })
+        );
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : "Failed to read screenshot";
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.record?.id === recordId
+              ? { ...f, screeningStep: "error" as const, screeningError: errorMsg }
+              : f
+          )
+        );
+      }
+    },
+    []
+  );
+
   const saveToSheet = useCallback(
     async (recordIds?: string[]) => {
       setSaving(true);
@@ -339,6 +446,7 @@ export function useResumeProcessor() {
     saveResult,
     processFiles,
     updateField,
+    processScreenshot,
     saveToSheet,
     reset,
   };

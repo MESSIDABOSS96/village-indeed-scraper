@@ -125,6 +125,7 @@ export function validateAndNormalize(
     city: stage2.city || "",
     stateRegion: stage2.stateRegion || "",
     postalCode: stage2.postalCode || "",
+    serviceCities: "", // populated later from the screening-questions screenshot
     segment: stage2.segment || "",
     specialties: stage2.specialties || "",
     agesServed: stage2.agesServed || "",

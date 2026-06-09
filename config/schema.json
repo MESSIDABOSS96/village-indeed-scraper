@@ -19,6 +19,7 @@
     { "key": "signUpSource2", "label": "Sign Up Source 2", "type": "constant", "order": 12 },
     { "key": "city", "label": "City", "type": "text", "order": 13 },
     { "key": "stateRegion", "label": "State/Region", "type": "text", "order": 14 },
+    { "key": "serviceCities", "label": "Service Cities", "type": "text", "order": 14.5 },
     { "key": "postalCode", "label": "Postal Code", "type": "text", "order": 15 },
     { "key": "segment", "label": "Segment", "type": "dropdown", "order": 16 },
     { "key": "specialties", "label": "Specialties", "type": "multi-checkbox", "order": 17 },

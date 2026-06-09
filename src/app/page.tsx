@@ -22,6 +22,7 @@ export default function Home() {
     saveResult,
     processFiles,
     updateField,
+    processScreenshot,
     saveToSheet,
     reset,
   } = useResumeProcessor();
@@ -106,6 +107,8 @@ export default function Home() {
                     files={files}
                     onFieldChange={updateField}
                     saving={saving}
+                    enableScreening
+                    onScreenshotUpload={processScreenshot}
                   />
                 </div>
               )}

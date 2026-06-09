@@ -8,12 +8,16 @@ interface ReviewTableProps {
   files: ProcessingFile[];
   onFieldChange: (recordId: string, field: FieldKey, value: string) => void;
   saving: boolean;
+  enableScreening?: boolean;
+  onScreenshotUpload?: (recordId: string, file: File) => void;
 }
 
 export default function ReviewTable({
   files,
   onFieldChange,
   saving,
+  enableScreening = false,
+  onScreenshotUpload,
 }: ReviewTableProps) {
   const totalIssues = files.reduce(
     (sum, f) => sum + (f.issues?.length ?? 0),
@@ -41,6 +45,11 @@ export default function ReviewTable({
               <th className="px-2 py-2 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider sticky left-0 bg-gray-800 z-10 border-r border-gray-700 min-w-[180px]">
                 File
               </th>
+              {enableScreening && (
+                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap min-w-[160px] max-w-[200px]">
+                  Screening Questions
+                </th>
+              )}
               {COLUMNS.map((col) => (
                 <th
                   key={col.key}
@@ -62,6 +71,13 @@ export default function ReviewTable({
                   }
                 }}
                 saving={saving}
+                enableScreening={enableScreening}
+                onScreenshotUpload={
+                  onScreenshotUpload && file.record
+                    ? (uploadFile) =>
+                        onScreenshotUpload(file.record!.id, uploadFile)
+                    : undefined
+                }
               />
             ))}
           </tbody>

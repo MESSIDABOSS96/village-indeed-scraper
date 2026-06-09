@@ -1,5 +1,22 @@
 import { ENUMS } from "./constants";
 
+export const SCREENING_PROMPT = `You are reading a screenshot of a candidate's Indeed "Screener questions" panel. It shows a list of questions (bold) each followed by the candidate's free-text answer.
+
+Extract exactly two values:
+
+1. serviceCities — the candidate's answer to the question asking which cities, areas, or neighborhoods they are willing to travel to / serve for in-home sessions (e.g. "What cities, areas, or neighborhoods are you willing to travel to for in-home sessions?"). Return the answer VERBATIM as written, including the original list of place names. If no such question/answer is present, return null.
+
+2. postalCode — the candidate's answer to a question that asks specifically for a postal code or ZIP code, if such a question exists. This is usually NOT asked yet, so in most screenshots it will be absent — in that case return null. Do NOT infer a postal code from city names; only return one if an explicit postal/ZIP code value is written.
+
+Return ONLY a JSON object in this exact shape (no markdown, no commentary):
+{
+  "serviceCities": string | null,
+  "postalCode": string | null,
+  "confidence": { "serviceCities": "high" | "medium" | "low", "postalCode": "high" | "medium" | "low" }
+}
+
+Set confidence to "low" when the text is blurry, ambiguous, or you are unsure you read it correctly. If a value is null, you may omit its confidence entry.`;
+
 export function buildStage1Prompt(resumeText: string): string {
   return `You are an expert resume parser. Extract structured data from the following resume text.
 

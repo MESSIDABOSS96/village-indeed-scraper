@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { buildStage1Prompt, buildStage2Prompt } from "./prompts";
-import type { Stage1Result, Stage2Result } from "./types";
+import { buildStage1Prompt, buildStage2Prompt, SCREENING_PROMPT } from "./prompts";
+import type { Stage1Result, Stage2Result, ScreeningExtractResult } from "./types";
 
 const anthropic = new Anthropic({ maxRetries: 4 });
 
@@ -105,6 +105,52 @@ export async function runStage2(stage1: Stage1Result): Promise<Stage2Result> {
     licenseType: parsed.licenseType ?? "",
     licenseNumber: parsed.licenseNumber ?? "",
     licenseState: parsed.licenseState ?? "",
+    confidence: parsed.confidence ?? {},
+  };
+}
+
+type SupportedImageMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/gif"
+  | "image/webp";
+
+/**
+ * Reads a screenshot of a candidate's Indeed screening questions and extracts
+ * the service cities answer and (when present) a postal/zip code answer.
+ */
+export async function runScreeningExtraction(
+  base64: string,
+  mediaType: SupportedImageMediaType
+): Promise<ScreeningExtractResult> {
+  const response = await withRetry(() =>
+    anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: mediaType, data: base64 },
+            },
+            { type: "text", text: SCREENING_PROMPT },
+          ],
+        },
+      ],
+    })
+  );
+
+  const content = response.content[0];
+  if (content.type !== "text") {
+    throw new Error("Unexpected response type from Claude screening extraction");
+  }
+
+  const parsed = JSON.parse(extractJson(content.text));
+  return {
+    serviceCities: parsed.serviceCities ?? null,
+    postalCode: parsed.postalCode ?? null,
     confidence: parsed.confidence ?? {},
   };
 }

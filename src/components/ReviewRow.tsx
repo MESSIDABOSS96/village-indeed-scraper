@@ -3,17 +3,22 @@
 import type { ProcessingFile, ColumnDef, FieldKey } from "@/lib/types";
 import { COLUMNS } from "@/lib/constants";
 import FieldCell from "./FieldCell";
+import ScreeningCell from "./ScreeningCell";
 
 interface ReviewRowProps {
   file: ProcessingFile;
   onFieldChange: (field: FieldKey, value: string) => void;
   saving: boolean;
+  enableScreening?: boolean;
+  onScreenshotUpload?: (file: File) => void;
 }
 
 export default function ReviewRow({
   file,
   onFieldChange,
   saving,
+  enableScreening = false,
+  onScreenshotUpload,
 }: ReviewRowProps) {
   if (!file.record) {
     return (
@@ -22,7 +27,7 @@ export default function ReviewRow({
           {file.fileName}
         </td>
         <td
-          colSpan={COLUMNS.length}
+          colSpan={COLUMNS.length + (enableScreening ? 1 : 0)}
           className="px-4 py-2 text-xs text-red-400"
         >
           {file.error || "Failed to process"}
@@ -53,6 +58,15 @@ export default function ReviewRow({
           )}
         </div>
       </td>
+      {enableScreening && onScreenshotUpload && (
+        <ScreeningCell
+          step={file.screeningStep}
+          fileName={file.screeningFileName}
+          error={file.screeningError}
+          onUpload={onScreenshotUpload}
+          disabled={saving}
+        />
+      )}
       {COLUMNS.map((col: ColumnDef) => (
         <FieldCell
           key={col.key}
